@@ -1,0 +1,39 @@
+<div class="card text-white" style="background-color: #000047; border-color: navy; color:antiquewhite; border-radius: 12px;">
+  <div class="card-body">
+    <h5 class="text-center mb-3">New Appointment</h5>
+    <p><strong>Name:</strong> <?php echo htmlspecialchars($client_name); ?></p>
+    <p><strong>Contact:</strong> <?php echo htmlspecialchars($client_contact); ?></p>
+    <p class="text-center"><strong>Pickup Point:</strong> <?php echo htmlspecialchars($pickup_location); ?></p>
+    <p class="text-center"><strong>Drop-off Point:</strong> <?php echo htmlspecialchars($dropoff_location); ?></p>
+  </div>
+  <div class="card-footer d-flex justify-content-around">
+    <?php if ($booking_id): ?>
+      <a href="accept_appointment.php?id=<?php echo $booking_id; ?>" class="btn btn-success btn-sm">Accept</a>
+      <a href="decline_appointment.php?id=<?php echo $booking_id; ?>" class="btn btn-danger btn-sm">Decline</a>
+    <?php else: ?>
+      <button class="btn btn-secondary btn-sm" disabled>No appointment</button>
+    <?php endif; ?>
+  </div>
+</div>
+<div class="card text-white" style="background-color: #000047; border-color: navy; color:antiquewhite; border-radius: 12px;">
+                    <div class="card-body">
+                        <h6>New Appointment</h6> 
+                        <p><strong>Name:</strong> <?php echo htmlspecialchars($client_name); ?></p>
+                        <p><strong>Contact:</strong> <?php echo htmlspecialchars($client_contact); ?></p>
+                        <p><strong>Pickup Point:</strong> <?php echo htmlspecialchars($pickup_location); ?></p>
+                        <p><strong>Drop-off Point:</strong> <?php echo htmlspecialchars($dropoff_location); ?></p>
+                        <!-- optional: show last login details (uncomment if you want) -->
+                        <?php if (!empty($log_time) || !empty($log_email)) : ?>
+                            <hr>
+                            <p><strong>Last Login:</strong> <?php echo htmlspecialchars($log_time ?? ''); ?></p>
+                            <p><strong>Email (from log):</strong> <?php echo htmlspecialchars($log_email ?? ''); ?></p>
+                            <p><strong>IP:</strong> <?php echo htmlspecialchars($log_ip ?? ''); ?></p>
+                            <p><strong>City/Country:</strong> <?php echo htmlspecialchars(($log_city ?? '') . ' / ' . ($log_country ?? '')); ?></p>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="card-footer d-flex justify-content-around">
+                        <button class="btn btn-sm" style="background: #E4ECF5;">Accept</button>
+                        <button class="btn btn-danger btn-sm" style="background: #8B0000;">Decline</button>
+                    </div>
+                </div>

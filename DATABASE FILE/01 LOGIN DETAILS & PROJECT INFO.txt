@@ -1,0 +1,13 @@
+
+
+
+**Admin Login Details**
+
+Email	: admin@gmail.com
+Password: admin123
+
+
+**Clint Login info**
+
+Email    : clint@gmail.com
+Password : admin123
