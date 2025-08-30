@@ -11472,3 +11472,47 @@ body.sidebar-toggled #kayaSidebar .kaya-logout i,
 #kayaSidebar.kaya-rail--collapsed .kaya-logout i{
   margin-right: 0 !important;
 }
+
+
+/* Consistent title (matches dashboard tone) */
+.kaya-page-title{font-weight:800;font-size:2rem;line-height:1.1;color:#000047;margin:0 0 1rem}
+
+/* Toolbar: understated, professional */
+.kaya-toolbar .btn{padding:.5rem .9rem;border-radius:.5rem;font-weight:600}
+
+/* Segmented filter tabs */
+.kaya-tab{background:#fff;border:1px solid #e5e7eb;color:#111827}
+.kaya-tab:hover,.kaya-tab:focus{border-color:#000047;color:#000047;text-decoration:none}
+.kaya-tab.active{border-color:#000047;color:#000047;box-shadow:0 0 0 2px rgba(0,0,71,.06) inset}
+
+/* Primary action (navy) */
+.btn-kaya-primary{background:#0A0F2C;border:1px solid #0A0F2C;color:#fff}
+.btn-kaya-primary:hover{background:#0c1438;border-color:#0c1438;color:#fff}
+
+/* Destructive/Cancel, outline */
+.btn-kaya-danger-outline{background:#fff;border:1px solid #dc2626;color:#dc2626}
+.btn-kaya-danger-outline:hover{background:#fee2e2}
+
+/* Table card (same tone as dashboard cards) */
+.kaya-card{background:#fff;border-radius:1rem;box-shadow:0 8px 24px rgba(0,0,0,.06);padding:1rem}
+
+/* Subtle table header */
+.kaya-table thead th{font-weight:600;color:#6b7280;border:0}
+.kaya-table tbody td{border-top:1px solid #f1f5f9}
+
+/* Actions column: roomy & aligned */
+.kaya-table th.actions,
+.kaya-table td.actions { width: 220px; }           /* give the column some real estate */
+.kaya-table td.actions{
+  display: flex;                                    /* lay out buttons in a row */
+  align-items: center;
+  justify-content: flex-start;                      /* not stuck to the right */
+  gap: 8px;                                         /* spacing between icons */
+  padding-right: 1rem;                              /* breathing room from edge */
+}
+
+/* Slightly smaller icons on narrow screens */
+@media (max-width: 575.98px){
+  .kaya-table th.actions, .kaya-table td.actions { width: 180px; }
+  .btn-icon{ width:32px; height:32px; }
+}

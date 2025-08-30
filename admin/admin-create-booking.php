@@ -108,10 +108,11 @@
                                  <label for="exampleInputEmail1">Destination</label>
                                  <input type="text" class="form-control" id="exampleInputEmail1" name="u_car_destination">
                              </div>
-                             <div class="form-group">
+                            
+                          <!--   <div class="form-group">
                                  <label for="exampleInputEmail1">Reg no.</label>
                                  <input type="text" class="form-control" id="exampleInputEmail1" name="u_car_regno">
-                             </div>
+                             </div> -->
                              <div class="form-group">
                                  <label for="exampleInputEmail1">Vehicle Type</label>
                                  <input type="text" class="form-control" id="exampleInputEmail1" name="u_car_type">

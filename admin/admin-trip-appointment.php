@@ -32,16 +32,17 @@
         <h1 class="kaya-page-title">Trip Appointments</h1>
 
         <!-- Simple actions (buttons link to your existing pages) -->
-        <div class="d-flex align-items-center mb-3">
-          <div class="btn-group" role="group" aria-label="Filters">
-            <a href="admin-trip-appointment.php" class="btn btn-dark btn-lg rounded-pill mr-2">Upcoming</a>
-            <a href="admin-view-booking.php"   class="btn btn-outline-secondary btn-lg rounded-pill">Completed</a>
-          </div>
-          <div class="ml-auto">
-            <a href="admin-create-booking.php" class="btn btn-lg rounded-pill text-white mr-2" style="background:#0A0F2C;">+ New Trip</a>
-            <a href="admin-manage-booking.php" class="btn btn-lg rounded-pill text-white" style="background:#8B0000;">Cancel</a>
-          </div>
+        <div class="kaya-toolbar d-flex align-items-center mb-3">
+        <div class="btn-group" role="group" aria-label="Filters">
+            <a href="admin-trip-appointment.php" class="btn kaya-tab active">Upcoming</a>
+            <a href="admin-view-booking.php"   class="btn kaya-tab">Completed</a>
         </div>
+        <div class="ml-auto">
+            <a href="admin-create-booking.php" class="btn btn-kaya-primary mr-2">New Trip</a>
+            <a href="admin-manage-booking.php" class="btn btn-kaya-danger-outline">Cancel</a>
+        </div>
+        </div>
+
 
         <!-- Table card -->
         <div class="kaya-card">
@@ -109,5 +110,30 @@
   <script src="vendor/datatables/dataTables.bootstrap4.js"></script>
   <script src="vendor/js/sb-admin.min.js"></script>
   <script src="vendor/js/demo/datatables-demo.js"></script>
+
+  <script>
+    (function () {
+    var btn = document.getElementById('sidebarToggle');
+    if (!btn) return;
+    btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        // SB-Admin convention
+        document.body.classList.toggle('sidebar-toggled');
+        // Your rail markup
+        var rail = document.getElementById('kayaSidebar');
+        if (rail) rail.classList.toggle('kaya-rail--collapsed');
+    });
+
+    // Keep the sidebar flush under the fixed navbar
+    function syncNavH(){
+        var nav = document.querySelector('.navbar.kaya-white');
+        if (!nav) return;
+        var h = Math.round(nav.getBoundingClientRect().height || 64);
+        document.documentElement.style.setProperty('--kaya-nav-h', h + 'px');
+    }
+    syncNavH(); window.addEventListener('resize', syncNavH);
+    })();
+</script>
+
 </body>
 </html>
