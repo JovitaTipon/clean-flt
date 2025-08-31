@@ -1,134 +1,195 @@
-<!DOCTYPE html>
-<html lang="en">
 <?php
+  /**
+   * Vehicle Telemetry (Monitoring) — KAYA
+   * - Uses your shared navbar + sidebar + footer for consistent layout/behavior.
+   * - Clean, “enterprise” card design aligned with Dashboard/Trips/Manage Vehicles.
+   * - Embeds a responsive Google Maps iframe (center can be overridden via query).
+   * - Keeps placeholder panels for Trip History, Current Route, Diagnostics.
+   * - Inline comments mark spots to wire real GPS/OBD values later.
+   */
+
   session_start();
   include('vendor/inc/config.php');
   include('vendor/inc/checklogin.php');
   check_login();
-  $aid=$_SESSION['a_id'];
-  include('vendor/inc/head.php');
+  $aid = require_admin();
+
+  // Allow basic map overrides via query string when testing (e.g. ?lat=14.6&lng=121.0&z=12)
+  $lat  = isset($_GET['lat']) ? floatval($_GET['lat']) : 14.5995;   // Manila default
+  $lng  = isset($_GET['lng']) ? floatval($_GET['lng']) : 120.9842;
+  $zoom = isset($_GET['z'])   ? intval($_GET['z'])     : 12;
+  $mapSrc = "https://maps.google.com/maps?q={$lat},{$lng}&z={$zoom}&output=embed";
 ?>
+<!DOCTYPE html>
+<html lang="en">
+<?php include('vendor/inc/head.php'); // loads Bootstrap + your base CSS ?>
 <body id="page-top">
-    <?php include("vendor/inc/nav.php");?>
-    <div id="wrapper">
-        <!-- Sidebar -->
-        <?php include('vendor/inc/sidebar.php');?>
-        <div id="content-wrapper">
-            <div class="container-fluid fas">
-                <ol class="breadcrumb">
-                    <h6 class="m-0 font-weight-bold" style="font-size: 30px; color:#000047;">User's Vehicle Monito</h6>     
-                 </ol>
-                <!-- Breadcrumbs-->
-                <!-- Header Title -->
-                <h4 style="font-size: 15px; font-weight: bold;"></h4>
-                    <iframe 
-                        src="https://maps.google.com/maps?q=14.5995,120.9842&z=12&output=embed" 
-                        width="100%" 
-                        height="400" 
-                        frameborder="0" 
-                        style="border:0" 
-                        allowfullscreen 
-                        aria-hidden="false" 
-                        tabindex="0">
-                    </iframe>
-                </div>
-<!-- Google Maps API Script -->
-<script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&callback=initMap"
-        async defer></script>
-                <!-- Trip History Cards -->
-                <div class="row">
-                    <!-- Trip History Card -->
-                    <div class="col-md-12 col-lg-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-header bg-primary text-white">Trip History</div>
-                            <div class="card-body" style="background: #dedfdcb0; color:#000047">
-                                <p><strong>Date / Time:</strong> <span class="float-right">View</span></p>
-                                <hr>
-                                <p><strong>Start-End Location:</strong> <span class="float-right">View</span></p>
-                                <hr>
-                                <p><strong>Assigned Driver:</strong> <span class="float-right">Felipe</span></p>
-                                <hr>
-                                <p><strong>Distance (km):</strong> <span class="float-right">300 km</span></p>
-                                <hr>
-                                <p><strong>Fuel Used:</strong> <span class="float-right">1 Ltr</span></p>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Placeholder for 2nd Card -->
-                    <div class="col-md-12 col-lg-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-header bg-info text-white">Current Route</div>
-                            <div class="card-body" style="background: #dedfdcb0; color:#000047">
-                                <p><strong>Start Location </strong> <span class="float-right">View</span></p>
-                                <hr>
-                                <p><strong>Destination</strong> <span class="float-right">View</span></p>
-                                <hr>
-                                <p><strong>Assigned Driver:</strong> <span class="float-right">Felipe</span></p>
-                                <hr>
-                                <p><strong>ETA</strong> <span class="float-right">20 Mins</span></p>
-                                <hr>
-                                <!-- <p><strong>Fuel Used:</strong> <span class="float-right">1 Ltr</span></p> -->
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Placeholder for 3rd Card -->
-                    <div class="col-md-12 col-lg-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-header bg-warning text-white">Diagnostics</div>
-                            <div class="card-body" style="background: #dedfdcb0; color:#000047">
-                                <p><strong>Fuel Level</strong> <span class="float-right">45%</span></p>
-                                <hr>
-                                <p><strong>Speed</strong> <span class="float-right">60km/hr</span></p>
-                                <hr>
-                                <p><strong>OBD Status</strong> <span class="float-right">Needs Attenion</span></p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <!-- Footer Timestamp -->
-                <div class="card-footer small text-muted">
-                    <?php
-                    date_default_timezone_set("Asia/Manila");
-                    echo "The time is " . date("h:i:sa");
-                    ?>
-                </div>
-            </div>
-            <!-- /.container-fluid -->
-            <!-- Sticky Footer -->
-            <?php include("vendor/inc/footer.php");?>
+  <?php include('vendor/inc/nav.php'); ?>
+
+  <div id="wrapper">
+    <?php include('vendor/inc/sidebar.php'); ?>
+
+    <div id="content-wrapper">
+      <div class="container-fluid">
+
+        <!-- Page Title – matches the size/weight we used on other modernized pages -->
+        <h1 class="kaya-page-title">Vehicle Telemetry</h1>
+
+        <!-- Map card -->
+        <section class="kaya-card mb-4">
+          <div class="kaya-card__head">Live Map</div>
+
+          <!-- Responsive map wrapper (keeps 16:9 ratio) -->
+          <div class="kaya-map">
+            <iframe
+              src="<?= htmlspecialchars($mapSrc) ?>"
+              title="Vehicle location"
+              loading="lazy"
+              referrerpolicy="no-referrer-when-downgrade"
+              allowfullscreen></iframe>
+          </div>
+
+          <!-- NOTE: once GPS is wired, you can update ?lat= / ?lng= server-side
+               or replace the iframe with a JS map (Leaflet/Google Maps) and
+               move markers in real-time. -->
+        </section>
+
+        <!-- Three information cards -->
+        <div class="row">
+          <!-- Trip History -->
+          <div class="col-lg-4 mb-4">
+            <section class="kaya-card h-100">
+              <div class="kaya-card__head">Trip History</div>
+              <div class="kaya-card__body">
+                <!-- Use <dl> for label/value pairs; replace placeholders later -->
+                <dl class="kaya-dl">
+                  <div class="kaya-dl__row">
+                    <dt>Date / Time</dt><dd><a href="#" class="kaya-link">View</a></dd>
+                  </div>
+                  <div class="kaya-dl__row">
+                    <dt>Start–End Location</dt><dd><a href="#" class="kaya-link">View</a></dd>
+                  </div>
+                  <div class="kaya-dl__row">
+                    <dt>Assigned Driver</dt><dd>Felipe</dd>
+                  </div>
+                  <div class="kaya-dl__row">
+                    <dt>Distance (km)</dt><dd>300 km</dd>
+                  </div>
+                  <div class="kaya-dl__row">
+                    <dt>Fuel Used</dt><dd>1 L</dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
+          </div>
+
+          <!-- Current Route -->
+          <div class="col-lg-4 mb-4">
+            <section class="kaya-card h-100">
+              <div class="kaya-card__head">Current Route</div>
+              <div class="kaya-card__body">
+                <dl class="kaya-dl">
+                  <div class="kaya-dl__row">
+                    <dt>Start Location</dt><dd><a href="#" class="kaya-link">View</a></dd>
+                  </div>
+                  <div class="kaya-dl__row">
+                    <dt>Destination</dt><dd><a href="#" class="kaya-link">View</a></dd>
+                  </div>
+                  <div class="kaya-dl__row">
+                    <dt>Assigned Driver</dt><dd>Felipe</dd>
+                  </div>
+                  <div class="kaya-dl__row">
+                    <dt>ETA</dt><dd>20 mins</dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
+          </div>
+
+          <!-- Diagnostics (OBD) -->
+          <div class="col-lg-4 mb-4">
+            <section class="kaya-card h-100">
+              <div class="kaya-card__head">Diagnostics</div>
+              <div class="kaya-card__body">
+                <dl class="kaya-dl">
+                  <div class="kaya-dl__row">
+                    <dt>Fuel Level</dt><dd>45%</dd>
+                  </div>
+                  <div class="kaya-dl__row">
+                    <dt>Speed</dt><dd>60 km/h</dd>
+                  </div>
+                  <div class="kaya-dl__row">
+                    <dt>OBD Status</dt><dd><span class="kaya-badge kaya-badge--warn">Needs Attention</span></dd>
+                  </div>
+                </dl>
+
+                <!-- When the OBD link is ready, you can update values here every X seconds.
+                     Example approach:
+                     - build a small endpoint `/telemetry.php?vehicle_id=...` returning JSON
+                     - fetch() it periodically and update the DOM (dd elements). -->
+              </div>
+            </section>
+          </div>
         </div>
-        <!-- /.content-wrapper -->
-    </div>
-    <!-- /#wrapper -->
-    <!-- Scroll to Top Button-->
-    <a class="scroll-to-top rounded" href="#page-top">
-        <i class="fas fa-angle-up"></i>
-    </a>
-    <!-- Logout Modal-->
-    <div class="modal fade" id="logoutModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
-        <div class="modal-dialog" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="exampleModalLabel">Ready to Leave?</h5>
-                    <button class="close" type="button" data-dismiss="modal" aria-label="Close">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-                <div class="modal-body">Select "Logout" below if you are ready to end your current session.</div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" type="button" data-dismiss="modal">Cancel</button>
-                    <a class="btn btn-danger" href="admin-logout.php">Logout</a>
-                </div>
-            </div>
+
+        <!-- Timestamp (optional) -->
+        <div class="text-muted small mt-2">
+          <?php
+            date_default_timezone_set("Asia/Manila");
+            echo "The time is " . date("h:i:sa");
+          ?>
         </div>
+      </div>
+
+      <?php include('vendor/inc/footer.php'); ?>
     </div>
-    <!-- Scripts -->
-    <script src="vendor/jquery/jquery.min.js"></script>
-    <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
-    <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
-    <script src="vendor/datatables/jquery.dataTables.js"></script>
-    <script src="vendor/datatables/dataTables.bootstrap4.js"></script>
-    <script src="js/sb-admin.min.js"></script>
-    <script src="js/demo/datatables-demo.js"></script>
+  </div>
+
+  <!-- Scripts (your footer already wires the sidebar toggle for consistency) -->
+  <script src="vendor/jquery/jquery.min.js"></script>
+  <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+
+  <style>
+    /* Keep typography consistent with your other refreshed pages */
+    html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+
+    .kaya-page-title{
+      font-weight:800; font-size:2rem; line-height:1.1; color:#000047; margin:0 0 1rem;
+    }
+
+    /* Card look & feel (same recipe we used elsewhere) */
+    .kaya-card{
+      background:#fff; border-radius:1rem; border:1px solid #e5e7eb;
+      box-shadow:0 8px 24px rgba(0,0,0,.06);
+    }
+    .kaya-card__head{
+      padding:.75rem 1rem; font-weight:600; color:#0f172a; border-bottom:1px solid #f1f5f9;
+    }
+    .kaya-card__body{ padding:1rem 1.25rem; }
+
+    /* Responsive 16:9 iframe wrapper */
+    .kaya-map{ position:relative; width:100%; padding-top:56.25%; border-radius:.75rem; overflow:hidden; }
+    .kaya-map iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; }
+
+    /* Definition list as neat 2-column table */
+    .kaya-dl{ margin:0; }
+    .kaya-dl__row{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:.5rem 0; border-top:1px solid #f1f5f9;
+    }
+    .kaya-dl__row:first-child{ border-top:0; }
+    .kaya-dl dt{ margin:0; color:#374151; font-weight:600; }
+    .kaya-dl dd{ margin:0; color:#0f172a; }
+
+    .kaya-link{ text-decoration:none; color:#000047; font-weight:600; }
+    .kaya-link:hover{ text-decoration:underline; }
+
+    .kaya-badge{
+      display:inline-block; padding:.125rem .5rem; border-radius:.375rem;
+      font-size:.825rem; line-height:1.25; border:1px solid transparent;
+    }
+    .kaya-badge--warn{ background:#fff7ed; color:#9a3412; border-color:#fdba74; }
+  </style>
 </body>
 </html>

@@ -1,0 +1,24 @@
+/* Consistent white topbar */
+.kaya-white { background:#fff; }
+
+/* Sidebar base width + animation (desktop) */
+#accordionSidebar.sidebar { width: 240px; transition: width .2s ease; }
+body.sidebar-toggled #accordionSidebar.sidebar,
+#accordionSidebar.sidebar.toggled { width: 0; overflow: hidden; }
+
+/* Content should stretch when sidebar collapses (SB Admin already handles, this is extra-safe) */
+#content-wrapper { transition: margin-left .2s ease; }
+
+/* Mobile: off-canvas slide + backdrop */
+@media (max-width: 991.98px){
+  #accordionSidebar.sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 1045;
+    transform: translateX(-100%); width: 240px; box-shadow: 0 10px 30px rgba(0,0,0,.18);
+  }
+  body.kaya-drawer-open #accordionSidebar.sidebar { transform: translateX(0); }
+  .kaya-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    opacity: 0; pointer-events: none; transition: opacity .2s ease; z-index: 1040;
+  }
+  body.kaya-drawer-open .kaya-backdrop { opacity: 1; pointer-events: auto; }
+}

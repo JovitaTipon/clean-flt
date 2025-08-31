@@ -1,10 +1,10 @@
- <?php
-  session_start();
-  include('vendor/inc/config.php');
-  include('vendor/inc/checklogin.php');
-  check_login();
-  $aid=$_SESSION['a_id'];
-  //Add USer
+<?php
+    session_start();
+    include('vendor/inc/config.php');
+    include('vendor/inc/checklogin.php');
+    check_login();
+    $aid=$_SESSION['a_id'];
+    //Add USer
   if (isset($_POST['add_user'])) {
     $u_fname = $_POST['u_fname'];
     $u_lname = $_POST['u_lname'];

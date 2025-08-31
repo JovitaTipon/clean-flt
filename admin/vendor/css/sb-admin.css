@@ -11516,3 +11516,45 @@ body.sidebar-toggled #kayaSidebar .kaya-logout i,
   .kaya-table th.actions, .kaya-table td.actions { width: 180px; }
   .btn-icon{ width:32px; height:32px; }
 }
+
+/* Kill the gray sticky footer background globally */
+footer.sticky-footer{
+  background: transparent !important;
+  height: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+footer.sticky-footer .container,
+footer.sticky-footer .copyright{
+  display: none !important;
+}
+/* Remove the reserved space for the footer */
+#wrapper #content-wrapper{
+  padding-bottom: 0 !important;
+}
+
+/* Keep toolbar tidy and responsive */
+.kaya-toolbar{
+  display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
+}
+
+/* Actions cluster: buttons stay side-by-side (no wrapping) */
+.kaya-actions{
+  display:flex; flex-wrap:nowrap; gap:.5rem;
+}
+.kaya-actions .btn{ white-space:nowrap; }
+
+/* Small screens: put actions on the next line but still side-by-side */
+@media (max-width: 575.98px){
+  .kaya-actions{ margin-left:0 !important; }
+  .kaya-toolbar .btn-group[aria-label="Filters"]{ flex:1 0 100%; }
+  .kaya-actions{ flex:0 0 auto; }
+}
+
+/* Slightly tighter padding so four buttons feel less crowded on mobile */
+.kaya-tab,
+.btn-kaya-primary,
+.btn-kaya-danger-outline{
+  padding:.45rem .8rem;
+}
+

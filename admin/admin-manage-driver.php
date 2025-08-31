@@ -4,7 +4,7 @@
   include('vendor/inc/config.php');
   include('vendor/inc/checklogin.php');
   check_login();
-  $aid = $_SESSION['a_id'];
+  $aid = require_admin();
 
   /* -------------------------------------------
    * CREATE: add a driver into tms_user_add_driver
@@ -84,8 +84,8 @@
 ?>
 <!DOCTYPE html>
 <html lang="en">
-<?php include('vendor/inc/head.php'); // your standard head (Bootstrap, sb-admin, etc.) ?>
 <head>
+    <?php include('vendor/inc/head.php'); // your standard head (Bootstrap, sb-admin, etc.) ?>
   <!-- Inter font to match your other pages -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
@@ -118,6 +118,30 @@
     /* Icon action cluster (not cramped) */
     .actions{display:flex;gap:.4rem}
     .actions .btn{padding:.375rem .5rem;border-radius:.5rem}
+
+    /* Mobile off-canvas + backdrop (works for #accordionSidebar or .sidebar) */
+    @media (max-width: 991.98px){
+    #accordionSidebar, .sidebar { 
+        transform: translateX(-100%); 
+        transition: transform .2s ease;
+        will-change: transform;
+    }
+    body.kaya-drawer-open #accordionSidebar,
+    body.kaya-drawer-open .sidebar {
+        transform: none;
+    }
+
+    .kaya-backdrop{
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,.35);
+        opacity: 0; pointer-events: none;
+        transition: opacity .2s ease;
+        z-index: 1040; /* above content, below navbar */
+    }
+    body.kaya-drawer-open .kaya-backdrop{
+        opacity: 1; pointer-events: auto;
+    }
+    }
   </style>
 </head>
 
@@ -231,8 +255,9 @@
 
                   <div class="form-row">
                     <div class="form-group col-md-6">
-                      <label>Contact #</label>
-                      <input type="text" name="u_phone" class="form-control">
+                        <label>Contact #</label>
+                        <input type="tel" name="u_phone" class="form-control" maxlength="32"
+                            placeholder="+63 912 345 6789">
                     </div>
                     <div class="form-group col-md-6">
                       <label>Email</label>
@@ -339,6 +364,84 @@
       var id = trigger.data('driver-id');
       if (id) { $('#delete_driver_id').val(id); }
     });
+
+    <script>
+    (function () {
+    var MOBILE_MAX = 991, body = document.body;
+
+    // Ensure a backdrop exists for mobile drawer
+    if (!document.querySelector('.kaya-backdrop')) {
+        var b = document.createElement('div');
+        b.className = 'kaya-backdrop';
+        b.addEventListener('click', function(){ body.classList.remove('kaya-drawer-open'); });
+        document.body.appendChild(b);
+    }
+
+    function handleToggle(e){
+        if (e) e.preventDefault();
+
+        // Support both SB-Admin and our “kaya” approach
+        var sidebar = document.querySelector('#accordionSidebar') || document.querySelector('.sidebar');
+
+        // Desktop collapse vs. mobile drawer
+        if (window.innerWidth <= MOBILE_MAX) {
+        body.classList.toggle('kaya-drawer-open');
+        } else {
+        body.classList.toggle('kaya-collapsed');
+        }
+
+        // SB-Admin's original toggles (safe no-ops if classes not present)
+        body.classList.toggle('sidebar-toggled');
+        if (sidebar) sidebar.classList.toggle('toggled');
+    }
+
+    // Hook up both toggles if present in nav.php
+    ['#sidebarToggle', '#sidebarToggleTop'].forEach(function(sel){
+        var btn = document.querySelector(sel);
+        if (btn) { btn.removeEventListener('click', handleToggle); btn.addEventListener('click', handleToggle); }
+    });
+
+    // Close drawer on resize up to desktop
+    window.addEventListener('resize', function(){
+        if (window.innerWidth > MOBILE_MAX) body.classList.remove('kaya-drawer-open');
+    });
+    })();
+
   </script>
+
+    <!-- Optional: make sure the rail/backdrop sit above page content on mobile -->
+    <style>
+    @media (max-width: 991.98px){
+    .kaya-rail{ z-index:1045; }   /* sidebar above content */
+}
+    </style>
+    <script>
+    (function () {
+    var btn = document.getElementById('sidebarToggle');
+    if (!btn) return;
+
+    btn.addEventListener('click', function (e) {
+        e.preventDefault();
+
+        // SB-Admin convention (mobile opens the off-canvas)
+        document.body.classList.toggle('sidebar-toggled');
+
+        // Your rail: collapse/expand on desktop
+        var rail = document.getElementById('kayaSidebar');
+        if (rail) rail.classList.toggle('kaya-rail--collapsed');
+    });
+
+    // Keep the content pushed below the fixed navbar
+    function syncNavH(){
+        var nav = document.querySelector('.navbar.kaya-white');
+        if (!nav) return;
+        var h = Math.round(nav.getBoundingClientRect().height || 64);
+        document.documentElement.style.setProperty('--kaya-nav-h', h + 'px');
+    }
+    syncNavH(); window.addEventListener('resize', syncNavH);
+    })();
+    </script>
+
+
 </body>
 </html>

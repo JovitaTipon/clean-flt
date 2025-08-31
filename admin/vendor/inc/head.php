@@ -17,6 +17,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}</style>
 
+    <style>
+    footer.sticky-footer{ background:transparent !important; height:0 !important; padding:0 !important; border:0 !important; }
+    #wrapper #content-wrapper{ padding-bottom:0 !important; }
+    </style>
+
 
 
     <!-- Page level plugin CSS-->

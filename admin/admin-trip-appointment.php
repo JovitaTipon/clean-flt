@@ -3,7 +3,7 @@
   include('vendor/inc/config.php');
   include('vendor/inc/checklogin.php');
   check_login();
-  $aid=$_SESSION['a_id'];
+  $aid = require_admin();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -18,6 +18,25 @@
   <!-- Inter font (global) -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}</style>
+
+  <style>
+    /* Neutralize SB-Admin sticky footer on this page */
+    footer.sticky-footer{
+      background: transparent !important;
+      height: 0 !important;
+      border: 0 !important;
+      box-shadow: none !important;
+    }
+    footer.sticky-footer .container,
+    footer.sticky-footer .copyright{
+      display: none !important;
+    }
+    /* Remove the extra bottom padding SB-Admin adds for its footer */
+    #wrapper #content-wrapper{
+      padding-bottom: 0 !important;
+    }
+  </style>
+
 </head>
 <body id="page-top">
 
@@ -33,15 +52,18 @@
 
         <!-- Simple actions (buttons link to your existing pages) -->
         <div class="kaya-toolbar d-flex align-items-center mb-3">
-        <div class="btn-group" role="group" aria-label="Filters">
+          <div class="btn-group" role="group" aria-label="Filters">
             <a href="admin-trip-appointment.php" class="btn kaya-tab active">Upcoming</a>
             <a href="admin-view-booking.php"   class="btn kaya-tab">Completed</a>
-        </div>
-        <div class="ml-auto">
-            <a href="admin-create-booking.php" class="btn btn-kaya-primary mr-2">New Trip</a>
+          </div>
+
+          <!-- was: <div class="ml-auto"> -->
+          <div class="kaya-actions ml-auto btn-group" role="group" aria-label="Actions">
+            <a href="admin-create-booking.php" class="btn btn-kaya-primary">New Trip</a>
             <a href="admin-manage-booking.php" class="btn btn-kaya-danger-outline">Cancel</a>
+          </div>
         </div>
-        </div>
+
 
 
         <!-- Table card -->
