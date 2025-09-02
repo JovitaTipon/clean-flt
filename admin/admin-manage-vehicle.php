@@ -160,7 +160,7 @@ if ($stmt = $mysqli->prepare($sql)) {
                   <td class="<?= $cls ?>"><?= htmlspecialchars($txt) ?></td>
                   <td class="actions">
                     <!-- Info / View -->
-                    <a href="admin-manage-single-vehicle.php?v_id=<?= $vid ?>"
+                    <a href="admin-view-vehicle.php?v_id=<?= $vid ?>"
                        class="btn btn-sm btn-outline-secondary btn-icon"
                        data-toggle="tooltip" title="View">
                       <i class="fas fa-info-circle" aria-hidden="true"></i>
