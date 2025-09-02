@@ -3,9 +3,9 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Aug 14, 2025 at 08:58 AM
+-- Generation Time: Sep 02, 2025 at 03:24 PM
 -- Server version: 10.4.32-MariaDB
--- PHP Version: 8.2.12
+-- PHP Version: 8.1.25
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -66,6 +66,44 @@ INSERT INTO `tms_admin` (`a_id`, `a_name`, `a_email`, `a_pwd`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `tms_audit_log`
+--
+
+CREATE TABLE `tms_audit_log` (
+  `id` int(11) NOT NULL,
+  `actor_type` enum('admin','driver') NOT NULL,
+  `actor_id` int(11) NOT NULL,
+  `action` varchar(50) NOT NULL,
+  `booking_u_id` int(11) NOT NULL,
+  `details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`details`)),
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `tms_audit_log`
+--
+
+INSERT INTO `tms_audit_log` (`id`, `actor_type`, `actor_id`, `action`, `booking_u_id`, `details`, `created_at`) VALUES
+(1, 'admin', 3, 'cancel', 15, '[]', '2025-09-01 02:24:32'),
+(2, 'admin', 3, 'cancel', 16, '[]', '2025-09-01 02:24:44'),
+(3, 'admin', 3, 'cancel', 17, '[]', '2025-09-01 02:25:00'),
+(4, 'admin', 3, 'cancel', 18, '[]', '2025-09-01 02:25:02'),
+(5, 'admin', 3, 'cancel', 19, '[]', '2025-09-01 02:25:04'),
+(6, 'admin', 3, 'cancel', 13, '[]', '2025-09-01 02:25:09'),
+(7, 'admin', 3, 'cancel', 21, '[]', '2025-09-01 02:26:48'),
+(8, 'admin', 3, 'cancel', 13, '[]', '2025-09-01 02:40:13'),
+(9, 'admin', 3, 'cancel', 13, '[]', '2025-09-01 04:25:22'),
+(10, 'admin', 3, 'restore_cancelled', 13, '[]', '2025-09-01 04:55:03'),
+(11, 'admin', 3, 'cancel', 13, '[]', '2025-09-01 04:55:13'),
+(12, 'admin', 3, 'delete_cancelled', 13, '[]', '2025-09-01 04:55:18'),
+(13, 'admin', 3, 'delete_cancelled', 16, '[]', '2025-09-01 05:25:50'),
+(14, 'admin', 3, 'delete_cancelled', 18, '[]', '2025-09-01 05:25:53'),
+(15, 'admin', 3, 'delete_cancelled', 19, '[]', '2025-09-01 05:25:56'),
+(16, 'admin', 3, 'delete_cancelled', 14, '[]', '2025-09-01 05:26:01');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `tms_bookings`
 --
 
@@ -95,6 +133,43 @@ CREATE TABLE `tms_bookings` (
 
 INSERT INTO `tms_bookings` (`booking_id`, `client_id`, `driver_id`, `vehicle_id`, `pickup_point`, `dropoff_point`, `pickup_lat`, `pickup_lng`, `dropoff_lat`, `dropoff_lng`, `contact_phone`, `seats_reserved`, `scheduled_at`, `booking_created_at`, `status`, `payment_status`, `notes`) VALUES
 (1, 2, 5, 3, '100 Main St, Town', 'Airport Terminal 1', NULL, NULL, NULL, NULL, '+639171234567', 3, '2025-08-12 14:00:00', '2025-08-11 20:18:51', 'pending', 'unpaid', NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `tms_driver_report`
+--
+
+CREATE TABLE `tms_driver_report` (
+  `report_id` int(11) NOT NULL,
+  `driver_id` int(11) NOT NULL,
+  `vehicle_id` int(11) DEFAULT NULL,
+  `trip_date` date NOT NULL,
+  `shift_start` datetime DEFAULT NULL,
+  `shift_end` datetime DEFAULT NULL,
+  `odometer_start` int(11) DEFAULT NULL,
+  `odometer_end` int(11) DEFAULT NULL,
+  `total_km` decimal(8,1) DEFAULT NULL,
+  `fuel_used_liters` decimal(8,2) DEFAULT NULL,
+  `route_from` varchar(120) DEFAULT NULL,
+  `route_to` varchar(120) DEFAULT NULL,
+  `pickups` int(11) DEFAULT NULL,
+  `dropoffs` int(11) DEFAULT NULL,
+  `passengers_moved` int(11) DEFAULT NULL,
+  `incident_level` enum('OK','Minor','Major') NOT NULL DEFAULT 'OK',
+  `status` enum('Pending','Verified','Rejected') NOT NULL DEFAULT 'Pending',
+  `notes` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `verified_by` int(11) DEFAULT NULL,
+  `verified_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `tms_driver_report`
+--
+
+INSERT INTO `tms_driver_report` (`report_id`, `driver_id`, `vehicle_id`, `trip_date`, `shift_start`, `shift_end`, `odometer_start`, `odometer_end`, `total_km`, `fuel_used_liters`, `route_from`, `route_to`, `pickups`, `dropoffs`, `passengers_moved`, `incident_level`, `status`, `notes`, `created_at`, `verified_by`, `verified_at`) VALUES
+(1, 3, 4, '2025-08-31', '2025-08-30 18:34:21', '2025-08-31 02:34:21', 120340, 120690, 350.0, 22.50, 'Clark Airport', 'Makati CBD', 7, 7, 9, 'OK', 'Pending', 'Dry run via EDSA', '2025-08-30 18:34:21', NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -139,6 +214,20 @@ INSERT INTO `tms_pwd_resets` (`r_id`, `r_email`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `tms_report_media`
+--
+
+CREATE TABLE `tms_report_media` (
+  `media_id` int(11) NOT NULL,
+  `report_id` int(11) NOT NULL,
+  `path` varchar(255) NOT NULL,
+  `caption` varchar(120) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `tms_syslogs`
 --
 
@@ -167,7 +256,7 @@ CREATE TABLE `tms_user` (
   `u_fname` varchar(200) NOT NULL,
   `u_lname` varchar(200) NOT NULL,
   `u_car_pax` text NOT NULL,
-  `u_phone` varchar(200) NOT NULL,
+  `u_phone` varchar(32) DEFAULT NULL,
   `u_addr` varchar(200) NOT NULL,
   `u_category` varchar(200) NOT NULL,
   `u_email` varchar(200) NOT NULL,
@@ -190,13 +279,10 @@ CREATE TABLE `tms_user` (
 --
 
 INSERT INTO `tms_user` (`u_id`, `u_fname`, `u_lname`, `u_car_pax`, `u_phone`, `u_addr`, `u_category`, `u_email`, `u_pwd`, `u_car_type`, `u_car_driver`, `u_car_regno`, `u_car_bookdate`, `u_car_pickup`, `u_car_destination`, `u_car_book_status`, `u_car_date`, `u_car_time`, `createdat`, `u_car_createdat`) VALUES
-(13, 'Clint', '01', '', '01600000000', 'Bogura,Bangladesh', 'User', 'clint@gmail.com', '123456', 'Sedan', '', 'CA2077', '2025-08-03', '', '', 'Pending', '', '', 2147483647, 2147483647),
-(14, 'gerald', 'dela cruz', '', '12345678901', '9593 orchids str. pineda subdivision dau mabalacat city', 'Driver', 'delacruzgerald042088@gmail.com', '$2y$10$oU78lmLtAi7zuHLdu9/3CeA9pzypCuNnYuxVbI0uMr2', '', '', '', '', '', '', '', '', '', 2147483647, 2147483647),
-(15, 'gerald', 'delacruz', '', '12345678901', '9593 orchids str. pineda subdivision dau mabalacat city', 'Driver', 'delacruzgerald042088@gmail.com', '$2y$10$j3G4RiXGLgKw69XjXdDe9uhdlXF2STn.9rDr4gfTtAY', '', '', '', '', '', '', '', '', '', 2147483647, 2147483647),
-(16, 'driver2', 'last2', '', '09123456789', 'driver 00000', 'Driver', 'driver2@gmail.com', '$2y$10$u1NJBtogEoo1Vnvz.OTUxek63mHQR7ciInHOriglyuN', '', '', '', '', '', '', '', '', '', 2147483647, 2147483647),
-(17, 'paul', '', '4', '', '', 'User', '', '$2y$10$i00yGJvfrmFyLgu7OGcMpu0MdT4sPFY3qcI2sEIh.6U', 'sedan', 'driver2', 'CA1234', '', 'no way', 'no destination', '', '2025-08-08', '04:47', 2147483647, 2147483647),
-(18, 'geral', 'ddelacruz', '', '09222222', '22 street', 'User', 'client@gmail.com', '62608e08adc29a8d6dbc9754e659f125', '', '', '', '', '', '', '', '', '', 2147483647, 2147483647),
-(19, 'three', 'four', '', '0945236548', 'pineda subd', 'User', 'three@gmail.com', '81dc9bdb52d04dc20036dbd8313ed055', '', '', '', '', '', '', '', '', '', 2147483647, 2147483647);
+(15, 'gerald', 'delacruz', '', '12345678901', '9593 orchids str. pineda subdivision dau mabalacat city', 'Driver', 'delacruzgerald042088@gmail.com', '$2y$10$j3G4RiXGLgKw69XjXdDe9uhdlXF2STn.9rDr4gfTtAY', '', '', '', '', '', '', 'Cancel', '', '', 2147483647, 2147483647),
+(17, 'paul', '', '4', '', '', 'User', '', '$2y$10$i00yGJvfrmFyLgu7OGcMpu0MdT4sPFY3qcI2sEIh.6U', 'sedan', 'driver2', 'CA1234', '', 'no way', 'no destination', 'Cancel', '2025-08-08', '04:47', 2147483647, 2147483647),
+(20, 'Felicity Piastri', '', '3', NULL, '', 'User', '', '$2y$10$hrxrah2GosDTS59qB81R3.0ya6b/UWPJo7CFmw5bX7I', 'SUV', 'Kimi', '123', '', 'AUF', 'Clark', 'Pending', '2025-10-21', '17:00', 2147483647, 2147483647),
+(21, 'Oscar Norris', '', '3', NULL, '', 'User', '', '$2y$10$RPmClYkM86d5B4DuJmhv7eidH/1QCUs0lzpdMw7BC4m', 'SUV', 'Keihle Dianne', '123', '', 'AUF', 'Clark', 'Cancel', '2025-09-10', '05:26', 2147483647, 2147483647);
 
 -- --------------------------------------------------------
 
@@ -209,7 +295,7 @@ CREATE TABLE `tms_user_add_driver` (
   `u_id` int(50) NOT NULL,
   `u_fname` varchar(50) NOT NULL,
   `u_lname` varchar(50) NOT NULL,
-  `u_phone` int(50) NOT NULL,
+  `u_phone` varchar(32) DEFAULT NULL,
   `u_addr` text NOT NULL,
   `u_car_type` text NOT NULL,
   `u_car_regno` text NOT NULL,
@@ -226,9 +312,8 @@ CREATE TABLE `tms_user_add_driver` (
 --
 
 INSERT INTO `tms_user_add_driver` (`d_u_id`, `u_id`, `u_fname`, `u_lname`, `u_phone`, `u_addr`, `u_car_type`, `u_car_regno`, `u_car_bookdate`, `u_car_book_status`, `u_category`, `u_email`, `u_pwd`, `createdat`) VALUES
-(1, 0, 'gerald', 'dela cruz', 2147483647, '9593 orchids str. pineda subdivision dau mabalacat city', '', '', '', '', 'Driver', 'delacruzgerald042088@gmail.com', '67a74306b06d0c01624fe0d0249a570f4d093747', '2025-08-02'),
-(2, 0, 'gerald', 'delacruz', 2147483647, '9593 orchids str. pineda subdivision dau mabalacat city', '', '', '', '', 'Driver', 'delacruzgerald042088@gmail.com', '67a74306b06d0c01624fe0d0249a570f4d093747', '2025-08-02'),
-(3, 0, 'driver2', 'last2', 2147483647, 'driver 00000', '', '', '', '', 'Driver', 'driver2@gmail.com', '67a74306b06d0c01624fe0d0249a570f4d093747', '2025-08-07');
+(3, 0, 'driver2', 'last2', '2147483647', 'driver 00000', '', '', '', '', 'Driver', 'driver2@gmail.com', '67a74306b06d0c01624fe0d0249a570f4d093747', '2025-08-07'),
+(4, 0, 'Shane', 'Lopez', '2147483647', 'taga malabanias, ac', 'Sedan', '123', '', 'On Trip', 'Driver', 'shaaane@mail.com', '', '2025-08-30');
 
 -- --------------------------------------------------------
 
@@ -252,7 +337,7 @@ CREATE TABLE `tms_vehicle` (
 --
 
 INSERT INTO `tms_vehicle` (`v_id`, `v_name`, `v_reg_no`, `v_pass_no`, `v_driver`, `v_category`, `v_dpic`, `v_status`) VALUES
-(3, 'Euro Bond', 'CA7766', '50', 'Vincent Pelletier', 'Matatu', '', 'Available'),
+(3, 'Euro Bond', 'CA7766', '50', 'Vincent Pelletier', 'Bus', '', 'Booked'),
 (4, 'Honda Accord', 'CA2077', '5', 'Joseph Yung', 'Bus', '', 'Booked'),
 (5, 'Volkswagen Passat', 'CA1690', '5', 'Jesse Robinson', 'Sedan', 'volkswagen-passat-500.jpg', 'Available'),
 (6, 'Nissan Rogue', 'CA1001', '7', 'Demo User', 'SUV', 'Nissan_Rogue_SV_2021.jpg', 'Available'),
@@ -275,6 +360,12 @@ ALTER TABLE `tms_admin`
   ADD PRIMARY KEY (`a_id`);
 
 --
+-- Indexes for table `tms_audit_log`
+--
+ALTER TABLE `tms_audit_log`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- Indexes for table `tms_bookings`
 --
 ALTER TABLE `tms_bookings`
@@ -282,6 +373,16 @@ ALTER TABLE `tms_bookings`
   ADD KEY `idx_driver_status_time` (`driver_id`,`status`,`scheduled_at`),
   ADD KEY `idx_client` (`client_id`),
   ADD KEY `idx_status` (`status`);
+
+--
+-- Indexes for table `tms_driver_report`
+--
+ALTER TABLE `tms_driver_report`
+  ADD PRIMARY KEY (`report_id`),
+  ADD KEY `idx_trip_date` (`trip_date`),
+  ADD KEY `idx_status` (`status`),
+  ADD KEY `idx_driver` (`driver_id`),
+  ADD KEY `fk_report_vehicle` (`vehicle_id`);
 
 --
 -- Indexes for table `tms_feedback`
@@ -294,6 +395,13 @@ ALTER TABLE `tms_feedback`
 --
 ALTER TABLE `tms_pwd_resets`
   ADD PRIMARY KEY (`r_id`);
+
+--
+-- Indexes for table `tms_report_media`
+--
+ALTER TABLE `tms_report_media`
+  ADD PRIMARY KEY (`media_id`),
+  ADD KEY `fk_media_report` (`report_id`);
 
 --
 -- Indexes for table `tms_syslogs`
@@ -336,10 +444,22 @@ ALTER TABLE `tms_admin`
   MODIFY `a_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
+-- AUTO_INCREMENT for table `tms_audit_log`
+--
+ALTER TABLE `tms_audit_log`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+
+--
 -- AUTO_INCREMENT for table `tms_bookings`
 --
 ALTER TABLE `tms_bookings`
   MODIFY `booking_id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `tms_driver_report`
+--
+ALTER TABLE `tms_driver_report`
+  MODIFY `report_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `tms_feedback`
@@ -354,6 +474,12 @@ ALTER TABLE `tms_pwd_resets`
   MODIFY `r_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
+-- AUTO_INCREMENT for table `tms_report_media`
+--
+ALTER TABLE `tms_report_media`
+  MODIFY `media_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `tms_syslogs`
 --
 ALTER TABLE `tms_syslogs`
@@ -363,19 +489,36 @@ ALTER TABLE `tms_syslogs`
 -- AUTO_INCREMENT for table `tms_user`
 --
 ALTER TABLE `tms_user`
-  MODIFY `u_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
+  MODIFY `u_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
 
 --
 -- AUTO_INCREMENT for table `tms_user_add_driver`
 --
 ALTER TABLE `tms_user_add_driver`
-  MODIFY `d_u_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `d_u_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `tms_vehicle`
 --
 ALTER TABLE `tms_vehicle`
   MODIFY `v_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+
+--
+-- Constraints for dumped tables
+--
+
+--
+-- Constraints for table `tms_driver_report`
+--
+ALTER TABLE `tms_driver_report`
+  ADD CONSTRAINT `fk_report_driver` FOREIGN KEY (`driver_id`) REFERENCES `tms_user_add_driver` (`d_u_id`),
+  ADD CONSTRAINT `fk_report_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `tms_vehicle` (`v_id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `tms_report_media`
+--
+ALTER TABLE `tms_report_media`
+  ADD CONSTRAINT `fk_media_report` FOREIGN KEY (`report_id`) REFERENCES `tms_driver_report` (`report_id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
