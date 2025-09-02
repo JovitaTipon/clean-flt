@@ -214,7 +214,7 @@
                   <td class="actions">
                     <!-- Icons only: info (view), edit (pen), eye (monitor/logs), trash (delete) -->
                     <a class="btn btn-outline-secondary"  title="View"
-                       href="driver-view.php?d_u_id=<?= (int)$d['d_u_id'] ?>"><i class="fas fa-info-circle"></i></a>
+                       href="admin-view-driver.php?d_u_id=<?= (int)$d['d_u_id'] ?>"><i class="fas fa-info-circle"></i></a>
                     <a class="btn btn-outline-secondary"  title="Edit"
                        href="driver-edit.php?d_u_id=<?= (int)$d['d_u_id'] ?>"><i class="fas fa-pen"></i></a>
                     <a class="btn btn-outline-secondary"  title="Monitor"
