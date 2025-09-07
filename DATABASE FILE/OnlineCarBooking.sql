@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 02, 2025 at 03:24 PM
+-- Generation Time: Sep 07, 2025 at 11:24 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.1.25
 
@@ -61,7 +61,7 @@ CREATE TABLE `tms_admin` (
 --
 
 INSERT INTO `tms_admin` (`a_id`, `a_name`, `a_email`, `a_pwd`) VALUES
-(3, '', 'admin@gmail.com', '0192023a7bbd73250516f069df18b500');
+(3, '', 'admin@gmail.com', '$2y$10$fAIUbxhK/sEWluSFpNbTUeMeQYjKoToz9anTnD4YK7dOP9u7acJWO');
 
 -- --------------------------------------------------------
 
@@ -99,7 +99,13 @@ INSERT INTO `tms_audit_log` (`id`, `actor_type`, `actor_id`, `action`, `booking_
 (13, 'admin', 3, 'delete_cancelled', 16, '[]', '2025-09-01 05:25:50'),
 (14, 'admin', 3, 'delete_cancelled', 18, '[]', '2025-09-01 05:25:53'),
 (15, 'admin', 3, 'delete_cancelled', 19, '[]', '2025-09-01 05:25:56'),
-(16, 'admin', 3, 'delete_cancelled', 14, '[]', '2025-09-01 05:26:01');
+(16, 'admin', 3, 'delete_cancelled', 14, '[]', '2025-09-01 05:26:01'),
+(17, 'admin', 3, 'delete_cancelled', 15, '[]', '2025-09-03 01:05:38'),
+(18, 'admin', 3, 'delete_cancelled', 17, '[]', '2025-09-03 01:05:41'),
+(19, 'admin', 3, 'restore_cancelled', 21, '[]', '2025-09-03 01:05:44'),
+(20, 'admin', 3, 'cancel', 22, '[]', '2025-09-04 12:01:33'),
+(21, 'admin', 3, 'delete_cancelled', 22, '[]', '2025-09-04 12:02:07'),
+(22, 'admin', 3, 'cancel', 24, '[]', '2025-09-04 19:01:02');
 
 -- --------------------------------------------------------
 
@@ -163,13 +169,6 @@ CREATE TABLE `tms_driver_report` (
   `verified_by` int(11) DEFAULT NULL,
   `verified_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `tms_driver_report`
---
-
-INSERT INTO `tms_driver_report` (`report_id`, `driver_id`, `vehicle_id`, `trip_date`, `shift_start`, `shift_end`, `odometer_start`, `odometer_end`, `total_km`, `fuel_used_liters`, `route_from`, `route_to`, `pickups`, `dropoffs`, `passengers_moved`, `incident_level`, `status`, `notes`, `created_at`, `verified_by`, `verified_at`) VALUES
-(1, 3, 4, '2025-08-31', '2025-08-30 18:34:21', '2025-08-31 02:34:21', 120340, 120690, 350.0, 22.50, 'Clark Airport', 'Makati CBD', 7, 7, 9, 'OK', 'Pending', 'Dry run via EDSA', '2025-08-30 18:34:21', NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -279,10 +278,11 @@ CREATE TABLE `tms_user` (
 --
 
 INSERT INTO `tms_user` (`u_id`, `u_fname`, `u_lname`, `u_car_pax`, `u_phone`, `u_addr`, `u_category`, `u_email`, `u_pwd`, `u_car_type`, `u_car_driver`, `u_car_regno`, `u_car_bookdate`, `u_car_pickup`, `u_car_destination`, `u_car_book_status`, `u_car_date`, `u_car_time`, `createdat`, `u_car_createdat`) VALUES
-(15, 'gerald', 'delacruz', '', '12345678901', '9593 orchids str. pineda subdivision dau mabalacat city', 'Driver', 'delacruzgerald042088@gmail.com', '$2y$10$j3G4RiXGLgKw69XjXdDe9uhdlXF2STn.9rDr4gfTtAY', '', '', '', '', '', '', 'Cancel', '', '', 2147483647, 2147483647),
-(17, 'paul', '', '4', '', '', 'User', '', '$2y$10$i00yGJvfrmFyLgu7OGcMpu0MdT4sPFY3qcI2sEIh.6U', 'sedan', 'driver2', 'CA1234', '', 'no way', 'no destination', 'Cancel', '2025-08-08', '04:47', 2147483647, 2147483647),
 (20, 'Felicity Piastri', '', '3', NULL, '', 'User', '', '$2y$10$hrxrah2GosDTS59qB81R3.0ya6b/UWPJo7CFmw5bX7I', 'SUV', 'Kimi', '123', '', 'AUF', 'Clark', 'Pending', '2025-10-21', '17:00', 2147483647, 2147483647),
-(21, 'Oscar Norris', '', '3', NULL, '', 'User', '', '$2y$10$RPmClYkM86d5B4DuJmhv7eidH/1QCUs0lzpdMw7BC4m', 'SUV', 'Keihle Dianne', '123', '', 'AUF', 'Clark', 'Cancel', '2025-09-10', '05:26', 2147483647, 2147483647);
+(21, 'Oscar Norris', '', '3', NULL, '', 'User', '', '$2y$10$RPmClYkM86d5B4DuJmhv7eidH/1QCUs0lzpdMw7BC4m', 'SUV', 'Keihle Dianne', '123', '', 'AUF', 'Clark', 'Pending', '2025-09-10', '05:26', 2147483647, 2147483647),
+(23, 'Nimi', '', '1', NULL, '', 'User', '', '$2y$10$rpuskFwW0YuBfRrwRWPSUOh7T8po8n3ElL/2pXn0wMN', 'SUV', 'Joshua Visbal', '123', '', 'AUF', 'SM Pampanga', 'Pending', '2025-09-04', '17:00', 2147483647, 2147483647),
+(24, 'Noah Enguerra', '', '2', NULL, '', 'User', '', '$2y$10$pQ/RhnGocRw1GJwQIoscAOBAvJ1CEhtIZbTFHB7t3mK', 'Van', 'Jonathan Gosta', '123', '', 'Chello', 'Pulung Cacutud', 'Cancel', '2025-09-04', '21:00', 2147483647, 2147483647),
+(25, 'Test', 'User', '', '', '', 'User', 'user@example.com', '$2y$10$te9R/68/eoRLG9uB7lyQZ..sjwcjj5L.tEY6kR3zHSs', '', '', '', '', '', '', '', '', '', 2147483647, 2147483647);
 
 -- --------------------------------------------------------
 
@@ -304,16 +304,16 @@ CREATE TABLE `tms_user_add_driver` (
   `u_category` text NOT NULL,
   `u_email` text NOT NULL,
   `u_pwd` text NOT NULL,
-  `createdat` date NOT NULL DEFAULT current_timestamp()
+  `createdat` date NOT NULL DEFAULT current_timestamp(),
+  `is_archived` tinyint(1) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `tms_user_add_driver`
 --
 
-INSERT INTO `tms_user_add_driver` (`d_u_id`, `u_id`, `u_fname`, `u_lname`, `u_phone`, `u_addr`, `u_car_type`, `u_car_regno`, `u_car_bookdate`, `u_car_book_status`, `u_category`, `u_email`, `u_pwd`, `createdat`) VALUES
-(3, 0, 'driver2', 'last2', '2147483647', 'driver 00000', '', '', '', '', 'Driver', 'driver2@gmail.com', '67a74306b06d0c01624fe0d0249a570f4d093747', '2025-08-07'),
-(4, 0, 'Shane', 'Lopez', '2147483647', 'taga malabanias, ac', 'Sedan', '123', '', 'On Trip', 'Driver', 'shaaane@mail.com', '', '2025-08-30');
+INSERT INTO `tms_user_add_driver` (`d_u_id`, `u_id`, `u_fname`, `u_lname`, `u_phone`, `u_addr`, `u_car_type`, `u_car_regno`, `u_car_bookdate`, `u_car_book_status`, `u_category`, `u_email`, `u_pwd`, `createdat`, `is_archived`) VALUES
+(8, 0, 'Shane', 'Lopez', '09446872447', 'taga san fernando, pampanga', 'Bus', '123', '', 'Available', 'Driver', 'shaaane@mail.com', '', '2025-09-04', 0);
 
 -- --------------------------------------------------------
 
@@ -337,7 +337,7 @@ CREATE TABLE `tms_vehicle` (
 --
 
 INSERT INTO `tms_vehicle` (`v_id`, `v_name`, `v_reg_no`, `v_pass_no`, `v_driver`, `v_category`, `v_dpic`, `v_status`) VALUES
-(3, 'Euro Bond', 'CA7766', '50', 'Vincent Pelletier', 'Bus', '', 'Booked'),
+(3, 'Euro Bond', 'CA7766', '50', 'Vincent Pelletier', 'Bus', 'images.jpg', 'Booked'),
 (4, 'Honda Accord', 'CA2077', '5', 'Joseph Yung', 'Bus', '', 'Booked'),
 (5, 'Volkswagen Passat', 'CA1690', '5', 'Jesse Robinson', 'Sedan', 'volkswagen-passat-500.jpg', 'Available'),
 (6, 'Nissan Rogue', 'CA1001', '7', 'Demo User', 'SUV', 'Nissan_Rogue_SV_2021.jpg', 'Available'),
@@ -447,7 +447,7 @@ ALTER TABLE `tms_admin`
 -- AUTO_INCREMENT for table `tms_audit_log`
 --
 ALTER TABLE `tms_audit_log`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
 
 --
 -- AUTO_INCREMENT for table `tms_bookings`
@@ -489,13 +489,13 @@ ALTER TABLE `tms_syslogs`
 -- AUTO_INCREMENT for table `tms_user`
 --
 ALTER TABLE `tms_user`
-  MODIFY `u_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
+  MODIFY `u_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=26;
 
 --
 -- AUTO_INCREMENT for table `tms_user_add_driver`
 --
 ALTER TABLE `tms_user_add_driver`
-  MODIFY `d_u_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `d_u_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `tms_vehicle`
@@ -511,7 +511,7 @@ ALTER TABLE `tms_vehicle`
 -- Constraints for table `tms_driver_report`
 --
 ALTER TABLE `tms_driver_report`
-  ADD CONSTRAINT `fk_report_driver` FOREIGN KEY (`driver_id`) REFERENCES `tms_user_add_driver` (`d_u_id`),
+  ADD CONSTRAINT `fk_report_driver` FOREIGN KEY (`driver_id`) REFERENCES `tms_user_add_driver` (`d_u_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_report_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `tms_vehicle` (`v_id`) ON DELETE SET NULL;
 
 --
