@@ -1,126 +1,157 @@
 <?php
-  session_start();
-  include('vendor/inc/config.php');
-  include('vendor/inc/checklogin.php');
-  check_login();
-  $aid = $_SESSION['a_id'];
+session_start();
+include('vendor/inc/config.php');
+include('vendor/inc/checklogin.php');
+check_login();
+
+$mysqli->set_charset('utf8mb4');
+@$mysqli->query("SET collation_connection='utf8mb4_unicode_ci'");
+
+function table_exists(mysqli $db, string $t): bool {
+  $t = $db->real_escape_string($t);
+  $r = $db->query("SHOW TABLES LIKE '{$t}'");
+  return $r && $r->num_rows > 0;
+}
+function badge_for($s){ return ['badge badge-success','Completed']; }
+
+/* data */
+$rows = [];
+if (table_exists($mysqli,'v_booking_grid')) {
+  $sql = "SELECT booking_id, scheduled_at, created_at, client_name, pax,
+                 pickup, dropoff, vehicle_reg_no, booking_type, driver_name,
+                 status
+          FROM v_booking_grid
+          WHERE status='completed'
+          ORDER BY COALESCE(scheduled_at, created_at) DESC, booking_id DESC";
+  if ($res = $mysqli->query($sql)) while($r=$res->fetch_assoc()) $rows[]=$r;
+
+} elseif (table_exists($mysqli,'bookings')) {
+  $sql = "SELECT b.id AS booking_id,
+                 COALESCE(b.scheduled_start_at, b.created_at) AS scheduled_at,
+                 b.created_at,
+                 COALESCE(c.name,'') AS client_name,
+                 b.pax,
+                 b.pickup_point  AS pickup,
+                 b.dropoff_point AS dropoff,
+                 v.plate_no      AS vehicle_reg_no,
+                 b.booking_type,
+                 d.name          AS driver_name,
+                 b.status
+          FROM bookings b
+          LEFT JOIN accounts c ON c.id=b.client_id
+          LEFT JOIN accounts d ON d.id=b.driver_id
+          LEFT JOIN vehicles v ON v.id=b.vehicle_id
+          WHERE b.status='completed'
+          ORDER BY COALESCE(b.scheduled_start_at, b.created_at) DESC, b.id DESC";
+  if ($res = $mysqli->query($sql)) while($r=$res->fetch_assoc()) $rows[]=$r;
+
+} elseif (table_exists($mysqli,'tms_user')) {
+  $sql = "SELECT u_id AS booking_id,
+                 FROM_UNIXTIME(NULLIF(u_car_createdat,0)) AS created_at,
+                 NULL AS scheduled_at,
+                 CONCAT(COALESCE(u_fname,''),' ',COALESCE(u_lname,'')) AS client_name,
+                 NULLIF(u_car_pax,'') AS pax,
+                 u_car_pickup  AS pickup,
+                 u_car_destination AS dropoff,
+                 u_car_regno   AS vehicle_reg_no,
+                 'admin'       AS booking_type,
+                 u_car_driver  AS driver_name,
+                 'completed'   AS status
+          FROM tms_user
+          WHERE u_car_book_status='Completed'
+          ORDER BY u_id DESC";
+  if ($res = $mysqli->query($sql)) while($r=$res->fetch_assoc()) $rows[]=$r;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <?php include('vendor/inc/head.php'); ?>
 <body id="page-top">
-  <?php include('vendor/inc/nav.php'); ?>
-  <div id="wrapper">
-    <?php include('vendor/inc/sidebar.php'); ?>
+<?php include('vendor/inc/nav.php'); ?>
+<div id="wrapper">
+  <?php include('vendor/inc/sidebar.php'); ?>
 
-    <div id="content-wrapper">
-      <div class="container-fluid">
+  <div id="content-wrapper">
+    <div class="container-fluid">
 
-        <h1 class="kaya-page-title">Completed Trip Appointments</h1>
+      <h1 class="kaya-page-title">Trip Appointments</h1>
 
-        <!-- Toolbar (tabs left, actions right) -->
-        <div class="kaya-toolbar d-flex align-items-center mb-3">
-          <div class="btn-group" role="group" aria-label="Filters">
-            <a href="admin-trip-appointment.php" class="btn kaya-tab">Upcoming</a>
-            <a href="admin-view-booking.php" class="btn kaya-tab active">Completed</a>
-          </div>
-          <div class="kaya-actions ml-auto btn-group" role="group" aria-label="Actions">
-            <a href="admin-create-booking.php" class="btn btn-kaya-primary">New Trip</a>
-            <a href="admin-manage-booking.php" class="btn btn-kaya-danger-outline">Cancelled</a>
-          </div>
+      <!-- Toolbar (same layout) -->
+      <div class="kaya-toolbar d-flex align-items-center mb-3" style="gap:.5rem;flex-wrap:wrap;">
+        <div class="btn-group" role="group" aria-label="Filters">
+          <a href="admin-trip-appointment.php" class="btn kaya-tab">Upcoming</a>
+          <a href="admin-view-booking.php"   class="btn kaya-tab active">Completed</a>
         </div>
-
-        <!-- Completed table -->
-        <section class="kaya-card">
-          <div class="table-responsive">
-            <table class="table kaya-table table-borderless" id="dataTable">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Vehicle Type</th>
-                  <th>Vehicle Reg No</th>
-                  <th>Booking date</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php
-                  $ret = "SELECT * FROM tms_user WHERE u_car_book_status IN ('Approved','Completed') ORDER BY u_id DESC";
-                  $stmt = $mysqli->prepare($ret);
-                  $stmt->execute();
-                  $res = $stmt->get_result();
-                  $cnt = 0;
-                  while ($row = $res->fetch_object()):
-                    $status = $row->u_car_book_status;
-                    if ($status == "Pending")      $badge = 'badge badge-warning';
-                    elseif ($status == "Completed") $badge = 'badge badge-primary';
-                    else                             $badge = 'badge badge-success';
-                ?>
-                <tr>
-                  <td><?= $cnt; ?></td>
-                  <td><?= htmlspecialchars($row->u_fname.' '.$row->u_lname); ?></td>
-                  <td><?= htmlspecialchars($row->u_phone); ?></td>
-                  <td><?= htmlspecialchars($row->u_car_type); ?></td>
-                  <td><?= htmlspecialchars($row->u_car_regno); ?></td>
-                  <td><?= htmlspecialchars($row->u_car_bookdate); ?></td>
-                  <td><span class="<?= $badge ?> px-2 py-1"><?= htmlspecialchars($status); ?></span></td>
-                </tr>
-                <?php $cnt++; endwhile; ?>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
+        <div class="kaya-actions ml-auto btn-group" role="group" aria-label="Actions" style="flex-wrap:nowrap;gap:.5rem;">
+          <a href="admin-create-booking.php" class="btn btn-kaya-primary">New Trip</a>
+          <a href="admin-manage-booking.php" class="btn btn-kaya-danger-outline">Cancelled</a>
+        </div>
       </div>
-      <?php include('vendor/inc/footer.php'); ?>
+
+      <div class="kaya-card">
+        <div class="table-responsive px-2">
+          <table id="dataTable" class="kaya-table table table-borderless">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Customer</th>
+                <th>Pax</th>
+                <th>Pick Up</th>
+                <th>Destination</th>
+                <th>Reg No.</th>
+                <th>Type</th>
+                <th>Driver</th>
+                <th>Status</th>
+                <th class="actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php $i=1; foreach($rows as $r):
+                $dt   = $r['scheduled_at'] ?: $r['created_at'];
+                $date = $dt ? date('M j, Y', strtotime($dt)) : '';
+                $time = $dt ? date('h:i A', strtotime($dt)) : '';
+                [$cls,$txt] = badge_for($r['status']);
+              ?>
+              <tr>
+                <td><?= $i++ ?></td>
+                <td><?= htmlspecialchars($date) ?></td>
+                <td><?= htmlspecialchars($time) ?></td>
+                <td><?= htmlspecialchars($r['client_name'] ?? '') ?></td>
+                <td><?= (int)($r['pax'] ?? 1) ?></td>
+                <td><?= htmlspecialchars($r['pickup'] ?? '') ?></td>
+                <td><?= htmlspecialchars($r['dropoff'] ?? '') ?></td>
+                <td><?= htmlspecialchars($r['vehicle_reg_no'] ?? '') ?></td>
+                <td><?= htmlspecialchars($r['booking_type'] ?? '') ?></td>
+                <td><?= htmlspecialchars($r['driver_name'] ?? '') ?></td>
+                <td><span class="<?= $cls ?> px-2 py-1"><?= $txt ?></span></td>
+                <td class="actions" style="white-space:nowrap;"></td>
+              </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
+    <?php include('vendor/inc/footer.php'); ?>
   </div>
+</div>
 
-  <!-- Vendor JS -->
-  <script src="vendor/jquery/jquery.min.js"></script>
-  <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
-  <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
-  <script src="vendor/datatables/jquery.dataTables.js"></script>
-  <script src="vendor/datatables/dataTables.bootstrap4.js"></script>
-  <script src="vendor/js/sb-admin.min.js"></script>
-  <script src="vendor/js/demo/datatables-demo.js"></script>
-
-  <script>
-  // DataTable
+<!-- JS -->
+<script src="vendor/jquery/jquery.min.js"></script>
+<script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+<script src="vendor/datatables/jquery.dataTables.js"></script>
+<script src="vendor/datatables/dataTables.bootstrap4.js"></script>
+<script src="vendor/js/sb-admin.min.js"></script>
+<script>
   $('#dataTable').DataTable({
     pageLength: 10,
-    order: [[0,'desc']],
+    order: [[0,'asc']],
     columnDefs: [{ targets: -1, orderable:false, searchable:false }]
   });
-
-  // Sidebar behaviour (your working snippet)
-  (function () {
-    var btn = document.getElementById('sidebarToggle');
-    if (!btn) return;
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      document.body.classList.toggle('sidebar-toggled');
-      var rail = document.getElementById('kayaSidebar');
-      if (rail) rail.classList.toggle('kaya-rail--collapsed');
-    });
-    function syncNavH(){
-      var nav = document.querySelector('.navbar.kaya-white');
-      if (!nav) return;
-      var h = Math.round(nav.getBoundingClientRect().height || 64);
-      document.documentElement.style.setProperty('--kaya-nav-h', h + 'px');
-    }
-    syncNavH(); window.addEventListener('resize', syncNavH);
-  })();
 </script>
-   
-
-  <style>
-    /* Kill the gray sticky footer background on this page */
-    footer.sticky-footer{ background:transparent!important; height:0!important; border:0!important; box-shadow:none!important; }
-    footer.sticky-footer .container, footer.sticky-footer .copyright{ display:none!important; }
-    #wrapper #content-wrapper{ padding-bottom:0!important; }
-  </style>
 </body>
 </html>

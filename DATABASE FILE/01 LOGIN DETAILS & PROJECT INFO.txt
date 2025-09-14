@@ -1,6 +1,3 @@
-
-
-
 **Admin Login Details**
 
 Email	: admin@gmail.com

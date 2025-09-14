@@ -1,157 +1,121 @@
 <?php
+// KAYA · Trip Appointments (Upcoming)
 session_start();
 include('vendor/inc/config.php');
 include('vendor/inc/checklogin.php');
 check_login();
 
 $isAdmin = function_exists('is_admin') ? is_admin() : isset($_SESSION['a_id']);
-$aid     = $isAdmin ? (int)($_SESSION['a_id'] ?? 0) : 0;
+$aid     = (int)($_SESSION['a_id'] ?? 0);
 
-/* -------------------------------------------------
-   (Optional) simple audit helper (no hard dependency)
-   ------------------------------------------------- */
-function kaya_audit($mysqli, $actorType, $actorId, $action, $bookingId, $details = []) {
-  if (!$mysqli) return;
+/* ----- safety: avoid collation warnings ----- */
+$mysqli->set_charset('utf8mb4');
+@$mysqli->query("SET collation_connection='utf8mb4_unicode_ci'");
 
-  // Create table the first time (safe no-op if it already exists)
-  $sql = "CREATE TABLE IF NOT EXISTS tms_audit_log (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            actor_type ENUM('admin','driver') NOT NULL,
-            actor_id INT NOT NULL,
-            action VARCHAR(50) NOT NULL,
-            booking_u_id INT NOT NULL,
-            details JSON NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
-  @$mysqli->query($sql);
-
-  $stmt = $mysqli->prepare("INSERT INTO tms_audit_log(actor_type,actor_id,action,booking_u_id,details)
-                            VALUES (?,?,?,?,?)");
-  if ($stmt) {
-    $json = json_encode($details, JSON_UNESCAPED_UNICODE);
-    // Important: one letter per value, no spaces -> s i s i s
-    $stmt->bind_param('sisis', $actorType, $actorId, $action, $bookingId, $json);
-    $stmt->execute();
-    $stmt->close();
+/* ----- helpers ----- */
+function table_exists(mysqli $db, string $t): bool {
+  $t = $db->real_escape_string($t);
+  $r = $db->query("SHOW TABLES LIKE '{$t}'");
+  return $r && $r->num_rows > 0;
+}
+function badge_for($s){
+  $s = strtolower((string)$s);
+  switch ($s) {
+    case 'pending':     return ['badge badge-light',   'Pending'];
+    case 'awaiting_driver':
+    case 'assigned':    return ['badge badge-info',    'Assigned'];
+    case 'accepted':    return ['badge badge-success', 'Accepted'];
+    case 'in_progress': return ['badge badge-primary', 'In Progress'];
+    case 'declined':    return ['badge badge-warning', 'Declined'];
+    case 'cancelled':   return ['badge badge-danger',  'Cancelled'];
+    case 'completed':   return ['badge badge-success', 'Completed'];
+    default:            return ['badge badge-secondary', ucfirst($s)];
   }
 }
 
-/* -------------------------------------------------
-   Resolve current DRIVER identity (for filtering + rights)
-   ------------------------------------------------- */
-$currentDriverId  = null;  // from tms_user_add_driver.d_u_id
-$currentDriverName = null; // "First Last" (to match tms_user.u_car_driver)
-
+/* ----- who is the driver (if not admin) ----- */
+$currentDriverId = null;
 if (!$isAdmin && isset($_SESSION['u_id'])) {
-  // Read the logged-in "user" row to grab their email/name.
-  if ($s = $mysqli->prepare("SELECT u_email, u_fname, u_lname FROM tms_user WHERE u_id=? LIMIT 1")) {
+  // try email -> accounts.id (driver)
+  if ($q = $mysqli->prepare("SELECT u_email FROM tms_user WHERE u_id=? LIMIT 1")) {
     $uid = (int)$_SESSION['u_id'];
-    $s->bind_param('i',$uid);
-    $s->execute();
-    $s->bind_result($email, $fn, $ln);
-    if ($s->fetch()) {
-      $currentDriverName = trim(($fn ?? '').' '.($ln ?? ''));
-      // try to map to tms_user_add_driver via email
-      if (!empty($email)) {
-        $s->close();
-        if ($d = $mysqli->prepare("SELECT d_u_id, u_fname, u_lname FROM tms_user_add_driver WHERE u_email=? LIMIT 1")) {
-          $d->bind_param('s',$email);
-          $d->execute();
-          $d->bind_result($did,$df,$dl);
-          if ($d->fetch()) {
-            $currentDriverId = (int)$did;
-            $currentDriverName = trim(($df ?? '').' '.($dl ?? '')) ?: $currentDriverName;
-          }
-          $d->close();
+    $q->bind_param('i',$uid);
+    $q->execute(); $q->bind_result($em); $q->fetch(); $q->close();
+    if ($em) {
+      if (table_exists($mysqli,'accounts')) {
+        if ($d = $mysqli->prepare("SELECT id FROM accounts WHERE email=? AND role='driver' LIMIT 1")) {
+          $d->bind_param('s',$em); $d->execute(); $d->bind_result($did); if ($d->fetch()) $currentDriverId = (int)$did; $d->close();
         }
-      } else {
-        $s->close();
       }
-    } else { $s->close(); }
-  }
-}
-
-/* -------------------------------------------------
-   Row actions (POST): approve / complete / cancel
-   ------------------------------------------------- */
-if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['booking_id'], $_POST['do'])) {
-  $id = (int)$_POST['booking_id'];
-  $act = $_POST['do'];
-
-  // Only allow drivers to cancel their own Pending/Approved.
-  if (!$isAdmin) {
-    if (!$currentDriverName) { header('Location: '.$_SERVER['REQUEST_URI']); exit; }
-    $own = false;
-    if ($s = $mysqli->prepare("SELECT u_car_driver, u_car_book_status FROM tms_user WHERE u_id=?")) {
-      $s->bind_param('i',$id);
-      $s->execute();
-      $s->bind_result($drvName, $status);
-      if ($s->fetch()) { $own = (trim($drvName) === $currentDriverName) && in_array($status, ['Pending','Approved']); }
-      $s->close();
+      if ($currentDriverId===null && table_exists($mysqli,'tms_user_add_driver')) {
+        if ($d = $mysqli->prepare("SELECT d_u_id FROM tms_user_add_driver WHERE u_email=? LIMIT 1")) {
+          $d->bind_param('s',$em); $d->execute(); $d->bind_result($did); if ($d->fetch()) $currentDriverId = (int)$did; $d->close();
+        }
+      }
     }
-    if ($act !== 'cancel' || !$own) { header('Location: '.$_SERVER['REQUEST_URI']); exit; }
   }
-
-  if ($act === 'approve' && $isAdmin) {
-    $stmt = $mysqli->prepare("UPDATE tms_user SET u_car_book_status='Approved' WHERE u_id=?");
-    $stmt->bind_param('i',$id);
-    $stmt->execute(); $stmt->close();
-    kaya_audit($mysqli,'admin',$aid,'approve',$id);
-  }
-  if ($act === 'complete' && $isAdmin) {
-    $stmt = $mysqli->prepare("UPDATE tms_user SET u_car_book_status='Completed' WHERE u_id=?");
-    $stmt->bind_param('i',$id);
-    $stmt->execute(); $stmt->close();
-    kaya_audit($mysqli,'admin',$aid,'complete',$id);
-  }
-  if ($act === 'cancel') {
-    $whoType = $isAdmin ? 'admin' : 'driver';
-    $whoId   = $isAdmin ? $aid     : (int)($_SESSION['u_id'] ?? 0);
-    $stmt = $mysqli->prepare("UPDATE tms_user SET u_car_book_status='Cancel' WHERE u_id=?");
-    $stmt->bind_param('i',$id);
-    $stmt->execute(); $stmt->close();
-    kaya_audit($mysqli,$whoType,$whoId,'cancel',$id);
-  }
-
-  header('Location: '.$_SERVER['PHP_SELF'].'?ok=1'); exit;
 }
 
-/* -------------------------------------------------
-   Fetch Upcoming list
-   - Admin: anything not Completed/Cancel
-   - Driver: only their own (by name match)
-   ------------------------------------------------- */
-$where  = "WHERE u_car_book_status NOT IN ('Completed','Cancel')";
-$params = [];
-$types  = '';
-
-if (!$isAdmin && $currentDriverName) {
-  $where .= " AND u_car_driver = ?";
-  $params[] = $currentDriverName;
-  $types   .= 's';
-}
-
-$sql = "SELECT u_id, u_car_date, u_car_time, u_fname, u_lname, u_car_pax,
-               u_car_pickup, u_car_destination, u_car_regno, u_car_type,
-               u_car_driver, u_car_book_status, u_car_createdat
-        FROM tms_user
-        $where
-        ORDER BY u_id DESC";
-
+/* ----- get upcoming rows (new -> legacy) ----- */
 $rows = [];
-if ($stmt = $mysqli->prepare($sql)) {
-  if ($types) { $stmt->bind_param($types, ...$params); }
-  $stmt->execute();
-  $res = $stmt->get_result();
-  while ($row = $res->fetch_assoc()) $rows[] = $row;
-  $stmt->close();
+if (table_exists($mysqli,'v_booking_grid')) {
+  $sql = "SELECT booking_id, scheduled_at, created_at, client_name, pax,
+                 pickup, dropoff, vehicle_reg_no, booking_type, driver_name,
+                 status, driver_id
+          FROM v_booking_grid
+          WHERE status IN ('pending','awaiting_driver','assigned','accepted','in_progress')
+          ".(!$isAdmin && $currentDriverId!==null ? "AND driver_id=".(int)$currentDriverId : "")."
+          ORDER BY COALESCE(scheduled_at, created_at) ASC, booking_id ASC";
+  if ($res = $mysqli->query($sql)) while($r=$res->fetch_assoc()) $rows[]=$r;
+
+} elseif (table_exists($mysqli,'bookings')) {
+  $sql = "SELECT b.id AS booking_id,
+                 COALESCE(b.scheduled_start_at, b.created_at) AS scheduled_at,
+                 b.created_at,
+                 COALESCE(c.name,'') AS client_name,
+                 b.pax,
+                 b.pickup_point  AS pickup,
+                 b.dropoff_point AS dropoff,
+                 v.plate_no      AS vehicle_reg_no,
+                 b.booking_type,
+                 d.name          AS driver_name,
+                 b.status,
+                 b.driver_id
+          FROM bookings b
+          LEFT JOIN accounts c ON c.id=b.client_id
+          LEFT JOIN accounts d ON d.id=b.driver_id
+          LEFT JOIN vehicles v ON v.id=b.vehicle_id
+          WHERE b.status IN ('pending','awaiting_driver','accepted','in_progress')
+          ".(!$isAdmin && $currentDriverId!==null ? "AND b.driver_id=".(int)$currentDriverId : "")."
+          ORDER BY COALESCE(b.scheduled_start_at, b.created_at) ASC, b.id ASC";
+  if ($res = $mysqli->query($sql)) while($r=$res->fetch_assoc()) $rows[]=$r;
+
+} elseif (table_exists($mysqli,'tms_user')) {
+  // legacy: Pending / Approved ~ upcoming
+  $sql = "SELECT u_id AS booking_id,
+                 FROM_UNIXTIME(NULLIF(u_car_createdat,0)) AS created_at,
+                 NULL AS scheduled_at,
+                 CONCAT(COALESCE(u_fname,''),' ',COALESCE(u_lname,'')) AS client_name,
+                 NULLIF(u_car_pax,'') AS pax,
+                 u_car_pickup  AS pickup,
+                 u_car_destination AS dropoff,
+                 u_car_regno   AS vehicle_reg_no,
+                 'admin'       AS booking_type,
+                 u_car_driver  AS driver_name,
+                 CASE WHEN u_car_book_status='Approved' THEN 'accepted' ELSE 'pending' END AS status,
+                 NULL AS driver_id
+          FROM tms_user
+          WHERE u_car_book_status IN ('Pending','Approved')
+          ORDER BY u_id ASC";
+  if ($res = $mysqli->query($sql)) while($r=$res->fetch_assoc()) $rows[]=$r;
 }
+
+define('ACTION_ENDPOINT', 'booking_actions.php');
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <?php include('vendor/inc/head.php'); ?>
 <body id="page-top">
-
 <?php include('vendor/inc/nav.php'); ?>
 
 <div id="wrapper">
@@ -162,13 +126,12 @@ if ($stmt = $mysqli->prepare($sql)) {
 
       <h1 class="kaya-page-title">Trip Appointments</h1>
 
-      <!-- Toolbar -->
+      <!-- Toolbar (exact same as your reference) -->
       <div class="kaya-toolbar d-flex align-items-center mb-3" style="gap:.5rem;flex-wrap:wrap;">
         <div class="btn-group" role="group" aria-label="Filters">
           <a href="admin-trip-appointment.php" class="btn kaya-tab active">Upcoming</a>
           <a href="admin-view-booking.php"   class="btn kaya-tab">Completed</a>
         </div>
-
         <div class="kaya-actions ml-auto btn-group" role="group" aria-label="Actions" style="flex-wrap:nowrap;gap:.5rem;">
           <a href="admin-create-booking.php" class="btn btn-kaya-primary">New Trip</a>
           <a href="admin-manage-booking.php" class="btn btn-kaya-danger-outline">Cancelled</a>
@@ -189,72 +152,109 @@ if ($stmt = $mysqli->prepare($sql)) {
                 <th>Pick Up</th>
                 <th>Destination</th>
                 <th>Reg No.</th>
-                <th>Vehicle Type</th>
+                <th>Type</th>
                 <th>Driver</th>
                 <th>Status</th>
                 <th class="actions">Actions</th>
               </tr>
             </thead>
             <tbody>
-              <?php
-              $n=1;
-              foreach ($rows as $r):
-                $date = $r['u_car_createdat']
-                        ? date('M j, Y', is_numeric($r['u_car_createdat']) ? (int)$r['u_car_createdat'] : strtotime($r['u_car_createdat']))
-                        : ($r['u_car_date'] ?? '');
-                $time = $r['u_car_createdat']
-                        ? date('h:i A', is_numeric($r['u_car_createdat']) ? (int)$r['u_car_createdat'] : strtotime($r['u_car_createdat']))
-                        : ($r['u_car_time'] ?? '');
+              <?php $n=1; foreach ($rows as $r):
+                $dt   = $r['scheduled_at'] ?: $r['created_at'];
+                $date = $dt ? date('M j, Y', strtotime($dt)) : '';
+                $time = $dt ? date('h:i A', strtotime($dt)) : '';
+                [$chipClass,$chipText] = badge_for($r['status']);
 
-                $status = $r['u_car_book_status'] ?: 'Pending';
-                $chip = 'badge badge-secondary';
-                if ($status==='Pending') $chip='badge badge-light';
-                if (in_array($status,['Approved','Available'])) $chip='badge badge-success';
-                if ($status==='Maintenance') $chip='badge badge-warning';
-                if ($status==='In Active')   $chip='badge badge-danger';
+                $isMine = (!$isAdmin && $r['driver_id']!==null && (int)$r['driver_id']===(int)$currentDriverId);
 
-                $canApprove  = $isAdmin && $status==='Pending';
-                $canComplete = $isAdmin && in_array($status,['Approved']);
-                $canCancel   = $isAdmin || ($currentDriverName && $r['u_car_driver']===$currentDriverName && in_array($status,['Pending','Approved']));
+                // Admin perms
+                $canAdminApprove  = $isAdmin && in_array(strtolower($r['status']),['pending','awaiting_driver','assigned']);
+                $canAdminComplete = $isAdmin && in_array(strtolower($r['status']),['accepted','in_progress']);
+                $canAdminCancel   = $isAdmin && in_array(strtolower($r['status']),['pending','awaiting_driver','assigned','accepted','in_progress']);
+
+                // Driver perms
+                $canDriverAccept  = !$isAdmin && $isMine && in_array(strtolower($r['status']),['pending','awaiting_driver','assigned']);
+                $canDriverDecline = !$isAdmin && $isMine && in_array(strtolower($r['status']),['pending','awaiting_driver','assigned']);
+                $canDriverStart   = !$isAdmin && $isMine && strtolower($r['status'])==='accepted';
+                $canDriverDrop    = !$isAdmin && $isMine && strtolower($r['status'])==='in_progress';
               ?>
               <tr>
-                <td><?= $n++; ?></td>
+                <td><?= $n++ ?></td>
                 <td><?= htmlspecialchars($date) ?></td>
                 <td><?= htmlspecialchars($time) ?></td>
-                <td><?= htmlspecialchars(trim($r['u_fname'].' '.$r['u_lname'])) ?></td>
-                <td><?= htmlspecialchars($r['u_car_pax']) ?></td>
-                <td><?= htmlspecialchars($r['u_car_pickup']) ?></td>
-                <td><?= htmlspecialchars($r['u_car_destination']) ?></td>
-                <td><?= htmlspecialchars($r['u_car_regno']) ?></td>
-                <td><?= htmlspecialchars($r['u_car_type']) ?></td>
-                <td><?= htmlspecialchars($r['u_car_driver']) ?></td>
-                <td><span class="<?= $chip ?> px-2 py-1"><?= htmlspecialchars($status) ?></span></td>
+                <td><?= htmlspecialchars($r['client_name'] ?? '') ?></td>
+                <td><?= (int)($r['pax'] ?? 1) ?></td>
+                <td><?= htmlspecialchars($r['pickup'] ?? '') ?></td>
+                <td><?= htmlspecialchars($r['dropoff'] ?? '') ?></td>
+                <td><?= htmlspecialchars($r['vehicle_reg_no'] ?? '') ?></td>
+                <td><?= htmlspecialchars($r['booking_type'] ?? '') ?></td>
+                <td><?= htmlspecialchars($r['driver_name'] ?? '') ?></td>
+                <td><span class="<?= $chipClass ?> px-2 py-1"><?= $chipText ?></span></td>
                 <td class="actions" style="white-space:nowrap;">
                   <?php if ($isAdmin): ?>
-                    <a href="admin-edit-booking.php?u_id=<?= (int)$r['u_id'] ?>" class="btn btn-sm btn-outline-secondary" title="Edit"><i class="fas fa-pen"></i></a>
+                    <a class="btn btn-sm btn-outline-secondary"
+                       href="admin-edit-booking.php?booking_id=<?= (int)$r['booking_id'] ?>"
+                       title="Edit"><i class="fas fa-pen"></i></a>
                   <?php endif; ?>
 
-                  <?php if ($canApprove): ?>
-                    <form method="post" class="d-inline">
-                      <input type="hidden" name="booking_id" value="<?= (int)$r['u_id'] ?>">
-                      <input type="hidden" name="do" value="approve">
+                  <?php if ($canAdminApprove): ?>
+                    <form method="post" action="<?= ACTION_ENDPOINT ?>" class="d-inline">
+                      <input type="hidden" name="action" value="admin_approve">
+                      <input type="hidden" name="id"     value="<?= (int)$r['booking_id'] ?>">
                       <button class="btn btn-sm btn-outline-success" title="Approve"><i class="fas fa-check"></i></button>
                     </form>
                   <?php endif; ?>
 
-                  <?php if ($canComplete): ?>
-                    <form method="post" class="d-inline">
-                      <input type="hidden" name="booking_id" value="<?= (int)$r['u_id'] ?>">
-                      <input type="hidden" name="do" value="complete">
-                      <button class="btn btn-sm btn-outline-primary" title="Mark Completed"><i class="fas fa-check-circle"></i></button>
+                  <?php if ($canAdminComplete): ?>
+                    <form method="post" action="<?= ACTION_ENDPOINT ?>" class="d-inline"
+                          onsubmit="return confirm('Mark this trip as Completed?');">
+                      <input type="hidden" name="action" value="admin_complete">
+                      <input type="hidden" name="id"     value="<?= (int)$r['booking_id'] ?>">
+                      <button class="btn btn-sm btn-outline-primary" title="Complete"><i class="fas fa-check-circle"></i></button>
                     </form>
                   <?php endif; ?>
 
-                  <?php if ($canCancel): ?>
-                    <form method="post" class="d-inline" onsubmit="return confirm('Cancel this booking?');">
-                      <input type="hidden" name="booking_id" value="<?= (int)$r['u_id'] ?>">
-                      <input type="hidden" name="do" value="cancel">
+                  <?php if ($canAdminCancel): ?>
+                    <form method="post" action="<?= ACTION_ENDPOINT ?>" class="d-inline"
+                          onsubmit="return confirm('Cancel this booking?');">
+                      <input type="hidden" name="action" value="admin_cancel">
+                      <input type="hidden" name="id"     value="<?= (int)$r['booking_id'] ?>">
                       <button class="btn btn-sm btn-outline-danger" title="Cancel"><i class="fas fa-ban"></i></button>
+                    </form>
+                  <?php endif; ?>
+
+                  <?php if ($canDriverAccept): ?>
+                    <form method="post" action="<?= ACTION_ENDPOINT ?>" class="d-inline">
+                      <input type="hidden" name="action" value="driver_accept">
+                      <input type="hidden" name="id"     value="<?= (int)$r['booking_id'] ?>">
+                      <button class="btn btn-sm btn-outline-success" title="Accept"><i class="fas fa-thumbs-up"></i></button>
+                    </form>
+                  <?php endif; ?>
+
+                  <?php if ($canDriverDecline): ?>
+                    <form method="post" action="<?= ACTION_ENDPOINT ?>" class="d-inline driver-decline-form">
+                      <input type="hidden" name="action" value="driver_decline">
+                      <input type="hidden" name="id"     value="<?= (int)$r['booking_id'] ?>">
+                      <input type="hidden" name="reason" value="">
+                      <button class="btn btn-sm btn-outline-warning" title="Decline"><i class="fas fa-thumbs-down"></i></button>
+                    </form>
+                  <?php endif; ?>
+
+                  <?php if ($canDriverStart): ?>
+                    <form method="post" action="<?= ACTION_ENDPOINT ?>" class="d-inline"
+                          onsubmit="return confirm('Start trip? Record PICKUP time.');">
+                      <input type="hidden" name="action" value="trip_start">
+                      <input type="hidden" name="id"     value="<?= (int)$r['booking_id'] ?>">
+                      <button class="btn btn-sm btn-outline-primary" title="Start"><i class="fas fa-play"></i></button>
+                    </form>
+                  <?php endif; ?>
+
+                  <?php if ($canDriverDrop): ?>
+                    <form method="post" action="<?= ACTION_ENDPOINT ?>" class="d-inline"
+                          onsubmit="return confirm('End trip? Record DROPOFF and complete.');">
+                      <input type="hidden" name="action" value="trip_end">
+                      <input type="hidden" name="id"     value="<?= (int)$r['booking_id'] ?>">
+                      <button class="btn btn-sm btn-outline-success" title="Dropoff"><i class="fas fa-flag-checkered"></i></button>
                     </form>
                   <?php endif; ?>
                 </td>
@@ -279,14 +279,22 @@ if ($stmt = $mysqli->prepare($sql)) {
 <script src="vendor/js/sb-admin.min.js"></script>
 
 <script>
-  // DataTable
   $('#dataTable').DataTable({
     pageLength: 10,
-    order: [[0,'desc']],
+    order: [[0,'asc']],
     columnDefs: [{ targets: -1, orderable:false, searchable:false }]
   });
 
-  // Sidebar behaviour (your working snippet)
+  // decline reason
+  document.querySelectorAll('.driver-decline-form').forEach(function(f){
+    f.addEventListener('submit', function(ev){
+      var why = prompt('Reason for declining (required):');
+      if (!why) { ev.preventDefault(); return false; }
+      f.querySelector('input[name="reason"]').value = why;
+    });
+  });
+
+  // sidebar
   (function () {
     var btn = document.getElementById('sidebarToggle');
     if (!btn) return;
