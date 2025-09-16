@@ -7,19 +7,19 @@ function isActive($file){ return basename($_SERVER['PHP_SELF']) === $file ? 'is-
       <i class="fas fa-tachometer-alt"></i><span>Dashboard</span></a></li>
 
     <li><a class="kaya-rail__link <?= isActive('admin-trip-appointment.php') ?>" href="admin-trip-appointment.php">
-      <i class="fas fa-book"></i><span>Trip Appointment</span></a></li>
+      <i class="fas fa-book"></i><span>Trips</span></a></li>
 
     <li><a class="kaya-rail__link <?= isActive('admin-manage-vehicle.php') ?>" href="admin-manage-vehicle.php">
-      <i class="fas fa-bus"></i><span>Manage Vehicles</span></a></li>
+      <i class="fas fa-bus"></i><span>Vehicles</span></a></li>
 
     <li><a class="kaya-rail__link <?= isActive('admin-manage-driver.php') ?>" href="admin-manage-driver.php">
-      <i class="fas fa-id-card"></i><span>Manage Drivers</span></a></li>
+      <i class="fas fa-id-card"></i><span>Drivers</span></a></li>
 
     <li><a class="kaya-rail__link <?= isActive('admin-view-syslogs.php') ?>" href="admin-view-syslogs.php">
       <i class="fas fa-shield-alt"></i><span>Vehicle Telemetry</span></a></li>
 
     <li><a class="kaya-rail__link <?= isActive('admin-publish-feedback.php') ?>" href="admin-publish-feedback.php">
-      <i class="fas fa-comments"></i><span>Reports & Alerts</span></a></li>
+      <i class="fas fa-comments"></i><span>Reports</span></a></li>
   </ul>
 
   <div class="kaya-rail__footer">

@@ -1,10 +1,14 @@
 <?php
 /**
- * KAYA • Manage Vehicles
- * - Canonical page layout (nav.php, sidebar.php, footer.php).
- * - Icon-only actions with tooltips (View, Edit, Monitor, Delete).
- * - DataTables pagination/search/sort.
- * - Inline comments explain non-obvious parts.
+ * KAYA • Manage Vehicles (with Create + Assign Driver)
+ * - Canonical includes (nav.php, sidebar.php, footer.php)
+ * - Create Vehicle (in-page POST, with optional photo upload)
+ * - Shows joined driver; Assign/Change via modal (server POST)
+ * - DataTables for pagination/search/sort
+ *
+ * Requires:
+ *   - tms_vehicle: v_id, v_name, v_reg_no, v_pass_no, v_category, v_status, v_dpic (nullable), driver_user_id (nullable)
+ *   - tms_user: u_id, u_fname, u_lname, u_category ('Driver')
  */
 
 session_start();
@@ -13,108 +17,197 @@ include('vendor/inc/checklogin.php');
 check_login();
 $aid = require_admin();
 
-/* ---------------------------
- * DELETE via modal (POST)
- * ---------------------------
- * The Delete modal posts 'delete_vehicle' + 'delete_vehicle_id'.
- */
-if (isset($_POST['delete_vehicle'])) {
-  $delete_id = (int) $_POST['delete_vehicle_id'];
-  $stmt = $mysqli->prepare("DELETE FROM tms_vehicle WHERE v_id = ?");
-  $stmt->bind_param("i", $delete_id);
-  $ok = $stmt->execute();
-  $stmt->close();
+$mysqli->set_charset('utf8mb4');
 
-  // Give immediate feedback; then refresh to reflect the change.
-  if ($ok) {
+/* ----------------- helpers ----------------- */
+function column_exists(mysqli $db, string $table, string $col): bool {
+  $t = $db->real_escape_string($table);
+  $c = $db->real_escape_string($col);
+  $r = $db->query("SHOW COLUMNS FROM `{$t}` LIKE '{$c}'");
+  return $r && $r->num_rows > 0;
+}
+function h($v){ return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
+
+$has_driver_fk = column_exists($mysqli, 'tms_vehicle', 'driver_user_id');
+
+/* ----------------- CREATE vehicle (POST) ----------------- */
+if (isset($_POST['create_vehicle'])) {
+  $v_name     = trim($_POST['v_name'] ?? '');
+  $v_reg_no   = trim($_POST['v_reg_no'] ?? '');
+  $v_pass_no  = (int)($_POST['v_pass_no'] ?? 0);
+  $v_category = trim($_POST['v_category'] ?? 'Sedan');
+  $v_status   = trim($_POST['v_status'] ?? 'Available');
+
+  // Optional driver on create (only if FK column exists)
+  $driver_id  = $has_driver_fk ? (int)($_POST['driver_user_id'] ?? 0) : 0;
+  if ($driver_id <= 0) $driver_id = null;
+
+  // Optional image upload
+  $v_dpic_path = null;
+  if (!empty($_FILES['v_dpic']['name']) && is_uploaded_file($_FILES['v_dpic']['tmp_name'])) {
+    $allowed = ['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp'];
+    $mime = mime_content_type($_FILES['v_dpic']['tmp_name']);
+    if (isset($allowed[$mime])) {
+      $ext  = $allowed[$mime];
+      $dir  = __DIR__ . '/vendor/img/vehicles';
+      if (!is_dir($dir)) @mkdir($dir, 0775, true);
+      $fname = 'veh_' . time() . '_' . mt_rand(1000,9999) . '.' . $ext;
+      $dest  = $dir . '/' . $fname;
+      if (@move_uploaded_file($_FILES['v_dpic']['tmp_name'], $dest)) {
+        $v_dpic_path = 'vendor/img/vehicles/' . $fname; // web path to store in DB
+      }
+    }
+  }
+
+  // Insert (wrap in transaction if assigning driver)
+  $mysqli->begin_transaction();
+  try {
+    if ($driver_id && $has_driver_fk) {
+      // ensure 1:1 by clearing this driver from any other vehicle
+      if ($s = $mysqli->prepare("UPDATE tms_vehicle SET driver_user_id=NULL WHERE driver_user_id=?")) {
+        $s->bind_param('i', $driver_id); $s->execute(); $s->close();
+      }
+    }
+
+    if ($has_driver_fk) {
+      $sql = "INSERT INTO tms_vehicle (v_name, v_reg_no, v_pass_no, v_category, v_status, v_dpic, driver_user_id)
+              VALUES (?,?,?,?,?,?,?)";
+      if ($s = $mysqli->prepare($sql)) {
+        $s->bind_param('ssisssi', $v_name, $v_reg_no, $v_pass_no, $v_category, $v_status, $v_dpic_path, $driver_id);
+        $ok = $s->execute(); $s->close();
+      } else { $ok=false; }
+    } else {
+      $sql = "INSERT INTO tms_vehicle (v_name, v_reg_no, v_pass_no, v_category, v_status, v_dpic)
+              VALUES (?,?,?,?,?,?)";
+      if ($s = $mysqli->prepare($sql)) {
+        $s->bind_param('ssisss', $v_name, $v_reg_no, $v_pass_no, $v_category, $v_status, $v_dpic_path);
+        $ok = $s->execute(); $s->close();
+      } else { $ok=false; }
+    }
+
+    if (!$ok) throw new Exception('Insert failed');
+
+    $mysqli->commit();
     echo "<script>
-            setTimeout(function(){ swal('Deleted!','Vehicle has been deleted.','success'); }, 100);
-            setTimeout(function(){ window.location.href='admin-manage-vehicle.php'; }, 1200);
+            setTimeout(function(){ swal('Created!','Vehicle has been added.','success'); }, 120);
+            setTimeout(function(){ window.location.href='admin-manage-vehicle.php'; }, 1000);
           </script>";
-  } else {
-    echo "<script>
-            setTimeout(function(){ swal('Error','Something went wrong.','error'); }, 100);
-          </script>";
+  } catch (Throwable $e) {
+    $mysqli->rollback();
+    echo "<script>setTimeout(function(){ swal('Error','Could not create vehicle.','error'); }, 120);</script>";
   }
 }
 
-/* --------------------------------
- * FETCH VEHICLES (one pass)
- * --------------------------------
- * Used for the table + to populate the Delete modal <select>.
- */
+/* ----------------- ASSIGN driver (POST, no AJAX) ----------------- */
+if ($has_driver_fk && isset($_POST['assign_driver'])) {
+  $vehicle_id = (int)($_POST['assign_vehicle_id'] ?? 0);
+  $driver_id  = (int)($_POST['assign_driver_id'] ?? 0); // 0 => unassign
+
+  $mysqli->begin_transaction();
+  try {
+    // clear current driver for this vehicle
+    if ($s = $mysqli->prepare("UPDATE tms_vehicle SET driver_user_id=NULL WHERE v_id=?")) {
+      $s->bind_param('i', $vehicle_id); $s->execute(); $s->close();
+    }
+    if ($driver_id > 0) {
+      // unhook this driver from any other vehicle
+      if ($s = $mysqli->prepare("UPDATE tms_vehicle SET driver_user_id=NULL WHERE driver_user_id=?")) {
+        $s->bind_param('i', $driver_id); $s->execute(); $s->close();
+      }
+      // assign
+      if ($s = $mysqli->prepare("UPDATE tms_vehicle SET driver_user_id=? WHERE v_id=?")) {
+        $s->bind_param('ii', $driver_id, $vehicle_id); $s->execute(); $s->close();
+      }
+    }
+    $mysqli->commit();
+    echo "<script>
+            setTimeout(function(){ swal('Saved','Assignment updated.','success'); }, 120);
+            setTimeout(function(){ window.location.href='admin-manage-vehicle.php'; }, 900);
+          </script>";
+  } catch (Throwable $e) {
+    $mysqli->rollback();
+    echo "<script>setTimeout(function(){ swal('Error','Could not assign driver.','error'); }, 120);</script>";
+  }
+}
+
+/* ----------------- DELETE vehicle (POST) ----------------- */
+if (isset($_POST['delete_vehicle'])) {
+  $delete_id = (int) $_POST['delete_vehicle_id'];
+  if ($stmt = $mysqli->prepare("DELETE FROM tms_vehicle WHERE v_id = ?")) {
+    $stmt->bind_param("i", $delete_id);
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    if ($ok) {
+      echo "<script>
+              setTimeout(function(){ swal('Deleted!','Vehicle has been deleted.','success'); }, 120);
+              setTimeout(function(){ window.location.href='admin-manage-vehicle.php'; }, 1000);
+            </script>";
+    } else {
+      echo "<script>setTimeout(function(){ swal('Error','Something went wrong.','error'); }, 120);</script>";
+    }
+  }
+}
+
+/* ----------------- FETCH: vehicles + joined driver ----------------- */
 $vehicles = [];
-$sql = "SELECT v_id, v_name, v_reg_no, v_driver, v_category, v_status
-        FROM tms_vehicle
-        ORDER BY v_id DESC";
+$sql = "SELECT v.v_id, v.v_name, v.v_reg_no, v.v_pass_no, v.v_category, v.v_status, v.v_dpic,
+               u.u_id AS driver_id, u.u_fname, u.u_lname
+        FROM tms_vehicle v
+        LEFT JOIN tms_user u ON ".($has_driver_fk ? "u.u_id = v.driver_user_id" : "0")."
+        ORDER BY v.v_id DESC";
 if ($stmt = $mysqli->prepare($sql)) {
   $stmt->execute();
   $res = $stmt->get_result();
-  while ($row = $res->fetch_assoc()) {
-    $vehicles[] = $row;
-  }
+  while ($row = $res->fetch_assoc()) $vehicles[] = $row;
   $stmt->close();
+}
+
+/* ----------------- FETCH: drivers (+ their current vehicle) ----------------- */
+$drivers = []; // u_id, name, current_vehicle_id
+$sqlD = "SELECT u.u_id,
+               TRIM(CONCAT(COALESCE(u.u_fname,''),' ',COALESCE(u.u_lname,''))) AS name,
+               ".($has_driver_fk ? "(SELECT v_id FROM tms_vehicle WHERE driver_user_id=u.u_id LIMIT 1)" : "NULL")." AS current_vehicle_id
+         FROM tms_user u
+         WHERE u.u_category='Driver'
+         ORDER BY u.u_id DESC";
+if ($s = $mysqli->prepare($sqlD)) {
+  $s->execute();
+  $r = $s->get_result();
+  while ($row = $r->fetch_assoc()) $drivers[] = $row;
+  $s->close();
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <?php include('vendor/inc/head.php'); ?><!-- Shared bootstrap/meta/css; keep it identical on all pages -->
-
-  <!-- Inter font to match the rest of your modernized pages -->
+  <?php include('vendor/inc/head.php'); ?>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
-    /* Global font alignment */
     html,body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-
-    /* Consistent page title */
     .kaya-page-title{font-weight:800;font-size:2rem;line-height:1.1;color:#000047;margin:0 0 1rem}
-
-    /* Card wrapper for the table */
-    .kaya-card{
-      background:#fff; border-radius:1rem; box-shadow:0 8px 24px rgba(0,0,0,.06);
-      padding:1rem; border:1px solid #e5e7eb;
-    }
-
-    /* Table refinements */
+    .kaya-card{background:#fff;border-radius:1rem;box-shadow:0 8px 24px rgba(0,0,0,.06);padding:1rem;border:1px solid #e5e7eb}
     .kaya-table thead th{font-weight:600;color:#6b7280;border:0}
-    .kaya-table tbody td{border-top:1px solid #f1f5f9; vertical-align:middle}
-
-    /* Icon-only action buttons */
-    .btn-icon{
-      width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center;
-      border-radius:.5rem; padding:0;
-    }
-    .actions .btn-icon + .btn-icon{ margin-left:.25rem; }
-
-    /* Status colors (text) */
-    .status-available{color:#16a34a;font-weight:600}   /* green   */
-    .status-service{color:#2563eb;font-weight:600}     /* blue    */
-    .status-maint{color:#dc2626;font-weight:600}       /* red     */
-
-    /* Toolbar buttons (neutral/pro look) */
-    .kaya-toolbar .btn{padding:.5rem .9rem;border-radius:.5rem;font-weight:600}
+    .kaya-table tbody td{border-top:1px solid #f1f5f9;vertical-align:middle}
+    .btn-icon{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:.5rem;padding:0}
+    .actions .btn-icon + .btn-icon{margin-left:.25rem}
+    .status-available{color:#16a34a;font-weight:600}
+    .status-service{color:#2563eb;font-weight:600}
+    .status-maint{color:#dc2626;font-weight:600}
     .btn-kaya-primary{background:#0A0F2C;border:1px solid #0A0F2C;color:#fff}
     .btn-kaya-primary:hover{background:#0c1438;border-color:#0c1438;color:#fff}
+    .veh-thumb{width:40px;height:28px;object-fit:cover;border-radius:.25rem;border:1px solid #e5e7eb;margin-right:.5rem}
   </style>
 </head>
-
 <body id="page-top">
-  <!-- Fixed top navbar (has #sidebarToggle) -->
   <?php include('vendor/inc/nav.php'); ?>
-
   <div id="wrapper">
-    <!-- Left rail (id="kayaSidebar") -->
     <?php include('vendor/inc/sidebar.php'); ?>
-
-    <!-- Main content -->
     <div id="content-wrapper">
       <div class="container-fluid">
 
-        <!-- Title -->
         <h1 class="kaya-page-title">Manage Vehicles</h1>
 
-        <!-- Top toolbar -->
         <div class="kaya-toolbar d-flex align-items-center mb-3">
           <div class="ml-auto">
             <button class="btn btn-kaya-primary" data-toggle="modal" data-target="#createVehicleModal">
@@ -123,75 +216,72 @@ if ($stmt = $mysqli->prepare($sql)) {
           </div>
         </div>
 
-        <!-- Vehicles table -->
         <div class="kaya-card">
           <div class="table-responsive">
-            <!-- Use a dedicated ID ('vehiclesTable') so we can initialize DataTables cleanly here -->
             <table id="vehiclesTable" class="table kaya-table table-hover table-borderless align-middle">
               <thead class="thead-light">
                 <tr>
                   <th style="width:56px">#</th>
                   <th>Vehicle</th>
+                  <th>Driver</th>
                   <th>Type</th>
                   <th>Status</th>
                   <th class="actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                <?php
-                  $n=1;
-                  foreach($vehicles as $v):
-                    // Normalize the status to text + color class
-                    $raw = (string)($v['v_status'] ?? '');
-                    $txt = $raw ?: 'Available';
-                    $cls = 'status-service';
-                    if (stripos($raw,'avail')!==false){ $txt='Available';   $cls='status-available'; }
-                    if (stripos($raw,'service')!==false){ $txt='In Service'; $cls='status-service'; }
-                    if (stripos($raw,'maint')!==false){ $txt='Maintenance'; $cls='status-maint'; }
-                    if (stripos($raw,'book')!==false){ $txt='Booked';       $cls='status-service'; }
+                <?php $n=1; foreach($vehicles as $v):
+                  $vid = (int)$v['v_id'];
+                  $regOrName = $v['v_reg_no'] ?: $v['v_name'];
+                  $driverLabel = $has_driver_fk && $v['driver_id'] ? trim(($v['u_fname']??'').' '.($v['u_lname']??'')) : '—';
 
-                    $vid = (int)$v['v_id'];
-                    $regOrName = $v['v_reg_no'] ?: $v['v_name'];
+                  $raw = (string)($v['v_status'] ?? '');
+                  $txt = $raw ?: 'Available';
+                  $cls = 'status-service';
+                  if (stripos($raw,'avail')!==false){ $txt='Available';   $cls='status-available'; }
+                  if (stripos($raw,'service')!==false){ $txt='In Service'; $cls='status-service'; }
+                  if (stripos($raw,'maint')!==false){ $txt='Maintenance'; $cls='status-maint'; }
+                  if (stripos($raw,'book')!==false){ $txt='Booked';       $cls='status-service'; }
                 ?>
                 <tr>
                   <td><?= $n++; ?></td>
-                  <td class="font-weight-semibold"><?= htmlspecialchars($regOrName) ?></td>
-                  <td><?= htmlspecialchars($v['v_category']) ?></td>
-                  <td class="<?= $cls ?>"><?= htmlspecialchars($txt) ?></td>
+                  <td class="font-weight-semibold">
+                    <?php if(!empty($v['v_dpic'])): ?>
+                      <img class="veh-thumb" src="<?= h($v['v_dpic']) ?>" alt="">
+                    <?php endif; ?>
+                    <?= h($regOrName ?: '—') ?>
+                  </td>
+                  <td><?= h($driverLabel) ?></td>
+                  <td><?= h($v['v_category']) ?></td>
+                  <td class="<?= $cls ?>"><?= h($txt) ?></td>
                   <td class="actions">
-                    <!-- Info / View -->
-                    <a href="admin-view-vehicle.php?v_id=<?= $vid ?>"
-                       class="btn btn-sm btn-outline-secondary btn-icon"
-                       data-toggle="tooltip" title="View">
-                      <i class="fas fa-info-circle" aria-hidden="true"></i>
-                      <span class="sr-only">View</span>
+                    <a href="admin-view-vehicle.php?v_id=<?= $vid ?>" class="btn btn-sm btn-outline-secondary btn-icon" data-toggle="tooltip" title="View">
+                      <i class="fas fa-info-circle"></i><span class="sr-only">View</span>
                     </a>
-
-                    <!-- Edit -->
-                    <a href="admin-manage-single-vehicle.php?v_id=<?= $vid ?>"
-                       class="btn btn-sm btn-outline-secondary btn-icon"
-                       data-toggle="tooltip" title="Edit">
-                      <i class="fas fa-pencil-alt" aria-hidden="true"></i>
-                      <span class="sr-only">Edit</span>
+                    <a href="admin-manage-single-vehicle.php?v_id=<?= $vid ?>" class="btn btn-sm btn-outline-secondary btn-icon" data-toggle="tooltip" title="Edit">
+                      <i class="fas fa-pencil-alt"></i><span class="sr-only">Edit</span>
                     </a>
-
-                    <!-- Monitor -->
-                    <a href="admin-view-syslogs.php?reg=<?= urlencode($v['v_reg_no']) ?>"
-                       class="btn btn-sm btn-outline-secondary btn-icon"
-                       data-toggle="tooltip" title="Monitor">
-                      <i class="fas fa-eye" aria-hidden="true"></i>
-                      <span class="sr-only">Monitor</span>
+                    <?php if ($has_driver_fk): ?>
+                      <button type="button"
+                              class="btn btn-sm btn-outline-secondary btn-icon"
+                              data-toggle="modal"
+                              data-target="#assignDriverModal"
+                              data-vehicle-id="<?= $vid ?>"
+                              data-current-driver-id="<?= (int)($v['driver_id']??0) ?>"
+                              title="Assign / Change Driver">
+                        <i class="fas fa-exchange-alt"></i><span class="sr-only">Assign</span>
+                      </button>
+                    <?php endif; ?>
+                    <a href="admin-view-syslogs.php?reg=<?= urlencode($v['v_reg_no']) ?>" class="btn btn-sm btn-outline-secondary btn-icon" data-toggle="tooltip" title="Monitor">
+                      <i class="fas fa-eye"></i><span class="sr-only">Monitor</span>
                     </a>
-
-                    <!-- Delete (opens modal, pre-fills select) -->
                     <button type="button"
                             class="btn btn-sm btn-outline-danger btn-icon"
                             data-toggle="modal"
                             data-target="#deleteVehicleModal"
                             data-vehicle-id="<?= $vid ?>"
                             title="Delete">
-                      <i class="fas fa-trash" aria-hidden="true"></i>
-                      <span class="sr-only">Delete</span>
+                      <i class="fas fa-trash"></i><span class="sr-only">Delete</span>
                     </button>
                   </td>
                 </tr>
@@ -201,17 +291,17 @@ if ($stmt = $mysqli->prepare($sql)) {
           </div>
         </div>
 
-        <!-- ================= Create Vehicle Modal =================
-             Front-end only. Your createVehicle.js should handle the actual creation. -->
-        <div class="modal fade" id="createVehicleModal" tabindex="-1" role="dialog" aria-labelledby="createVehicleModalLabel" aria-hidden="true">
+        <!-- ========== Create Vehicle Modal (WORKING) ========== -->
+        <div class="modal fade" id="createVehicleModal" tabindex="-1" role="dialog" aria-hidden="true">
           <div class="modal-dialog modal-lg" role="document">
-            <form id="createVehicleForm" enctype="multipart/form-data">
+            <form method="POST" enctype="multipart/form-data">
               <div class="modal-content" style="background:#f8fafc;color:#0f172a">
                 <div class="modal-header">
-                  <h5 class="modal-title" id="createVehicleModalLabel">Create New Vehicle</h5>
-                  <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span>&times;</span></button>
+                  <h5 class="modal-title">Create New Vehicle</h5>
+                  <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
                 </div>
                 <div class="modal-body">
+                  <input type="hidden" name="create_vehicle" value="1">
                   <div class="form-row">
                     <div class="form-group col-md-6">
                       <label>Name</label>
@@ -226,26 +316,8 @@ if ($stmt = $mysqli->prepare($sql)) {
                   <div class="form-row">
                     <div class="form-group col-md-4">
                       <label>Pax</label>
-                      <input type="number" class="form-control" name="v_pass_no">
+                      <input type="number" class="form-control" name="v_pass_no" min="0" value="0">
                     </div>
-
-                    <!-- Hidden: you kept driver selection hidden in your current flow -->
-                    <div class="form-group col-md-4" style="display:none">
-                      <label>Driver</label>
-                      <select class="form-control" name="v_driver">
-                        <?php
-                          $driverRet = "SELECT u_fname, u_lname FROM tms_user WHERE u_category = 'Driver'";
-                          if ($s=$mysqli->prepare($driverRet)) {
-                            $s->execute(); $r=$s->get_result();
-                            while($d=$r->fetch_object()){
-                              echo "<option>".htmlspecialchars("{$d->u_fname} {$d->u_lname}")."</option>";
-                            }
-                            $s->close();
-                          }
-                        ?>
-                      </select>
-                    </div>
-
                     <div class="form-group col-md-4">
                       <label>Vehicle Category</label>
                       <select class="form-control" name="v_category">
@@ -255,22 +327,43 @@ if ($stmt = $mysqli->prepare($sql)) {
                         <option>Van</option>
                       </select>
                     </div>
-                  </div>
-
-                  <div class="form-row">
-                    <div class="form-group col-md-6">
-                      <label>Vehicle Status</label>
+                    <div class="form-group col-md-4">
+                      <label>Status</label>
                       <select class="form-control" name="v_status">
                         <option>Available</option>
                         <option>Booked</option>
                         <option>UnderMaintenance</option>
                       </select>
                     </div>
+                  </div>
+
+                  <?php if ($has_driver_fk): ?>
+                  <div class="form-row">
+                    <div class="form-group col-md-6">
+                      <label>Assign Driver (optional)</label>
+                      <select class="form-control" name="driver_user_id">
+                        <option value="">— None —</option>
+                        <?php foreach($drivers as $d): ?>
+                          <?php if (empty($d['current_vehicle_id'])): ?>
+                            <option value="<?= (int)$d['u_id'] ?>"><?= h($d['name'] ?: ('Driver #'.(int)$d['u_id'])) ?></option>
+                          <?php endif; ?>
+                        <?php endforeach; ?>
+                      </select>
+                      <small class="text-muted">Only unassigned drivers are listed here. You can always change later.</small>
+                    </div>
                     <div class="form-group col-md-6">
                       <label>Vehicle Picture</label>
-                      <input type="file" class="form-control" name="v_dpic">
+                      <input type="file" class="form-control" name="v_dpic" accept="image/*">
                     </div>
                   </div>
+                  <?php else: ?>
+                  <div class="form-row">
+                    <div class="form-group col-md-12">
+                      <label>Vehicle Picture</label>
+                      <input type="file" class="form-control" name="v_dpic" accept="image/*">
+                    </div>
+                  </div>
+                  <?php endif; ?>
                 </div>
 
                 <div class="modal-footer">
@@ -282,22 +375,50 @@ if ($stmt = $mysqli->prepare($sql)) {
           </div>
         </div>
 
-        <!-- ================= Delete Vehicle Modal =================
-             Lets you pick a vehicle, or it's pre-filled by clicking a row's Delete icon. -->
-        <div class="modal fade" id="deleteVehicleModal" tabindex="-1" role="dialog" aria-labelledby="deleteVehicleModalLabel" aria-hidden="true">
+        <!-- ========== Assign/Change Driver Modal (POST back to this page) ========== -->
+        <?php if ($has_driver_fk): ?>
+        <div class="modal fade" id="assignDriverModal" tabindex="-1" role="dialog" aria-hidden="true">
           <div class="modal-dialog" role="document">
             <form method="POST">
               <div class="modal-content">
                 <div class="modal-header">
-                  <h5 class="modal-title" id="deleteVehicleModalLabel">Delete Vehicle</h5>
-                  <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span>&times;</span></button>
+                  <h5 class="modal-title">Assign / Change Driver</h5>
+                  <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                </div>
+                <div class="modal-body">
+                  <input type="hidden" name="assign_driver" value="1">
+                  <input type="hidden" name="assign_vehicle_id" id="assign_vehicle_id">
+                  <label>Driver</label>
+                  <select class="form-control" name="assign_driver_id" id="assign_driver_id">
+                    <!-- options injected by JS to include unassigned + current -->
+                  </select>
+                  <small class="text-muted d-block mt-2">Choose “— None —” to unassign.</small>
+                </div>
+                <div class="modal-footer">
+                  <button type="submit" class="btn btn-kaya-primary">Save</button>
+                  <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- ========== Delete Vehicle Modal ========== -->
+        <div class="modal fade" id="deleteVehicleModal" tabindex="-1" role="dialog" aria-hidden="true">
+          <div class="modal-dialog" role="document">
+            <form method="POST">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title">Delete Vehicle</h5>
+                  <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
                 </div>
                 <div class="modal-body">
                   <p class="mb-2">Choose a vehicle to delete:</p>
                   <select class="form-control" name="delete_vehicle_id" id="delete_vehicle_id">
                     <?php foreach($vehicles as $v): ?>
                       <option value="<?= (int)$v['v_id'] ?>">
-                        <?= htmlspecialchars(($v['v_reg_no'] ?: $v['v_name']).' — '.$v['v_category']) ?>
+                        <?= h(($v['v_reg_no'] ?: $v['v_name']).' — '.$v['v_category']) ?>
                       </option>
                     <?php endforeach; ?>
                   </select>
@@ -311,50 +432,69 @@ if ($stmt = $mysqli->prepare($sql)) {
           </div>
         </div>
 
-      </div><!-- /.container-fluid -->
-
-      <!-- Shared footer (contains the sidebar toggle logic) -->
+      </div>
       <?php include('vendor/inc/footer.php'); ?>
-    </div><!-- /#content-wrapper -->
-  </div><!-- /#wrapper -->
+    </div>
+  </div>
 
-  <!-- Scroll to Top -->
   <a class="scroll-to-top rounded" href="#page-top"><i class="fas fa-angle-up"></i></a>
 
-  <!-- SweetAlert -->
   <script src="https://unpkg.com/sweetalert/dist/sweetalert.min.js"></script>
-
-  <!-- Vendor JS -->
   <script src="vendor/jquery/jquery.min.js"></script>
   <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
   <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
-
-  <!-- DataTables (pagination/search/sort) -->
   <script src="vendor/datatables/jquery.dataTables.js"></script>
   <script src="vendor/datatables/dataTables.bootstrap4.js"></script>
-
-  <!-- Optional SB-Admin JS (if you use components from it) -->
   <script src="js/sb-admin.min.js"></script>
 
   <script>
-    // Initialize Bootstrap tooltips for icon-only buttons
-    $(function () { $('[data-toggle="tooltip"]').tooltip(); });
+    $(function(){ $('[data-toggle="tooltip"]').tooltip(); });
 
-    // Initialize DataTable (pagination & search)
     $('#vehiclesTable').DataTable({
       pageLength: 10,
-      lengthMenu: [10, 25, 50, 100],
-      order: [[0, 'desc']], // newest first by row number
-      columnDefs: [
-        { targets: -1, orderable: false, searchable: false } // actions column
-      ]
+      lengthMenu: [10,25,50,100],
+      order: [[0,'desc']],
+      columnDefs: [{targets:-1, orderable:false, searchable:false}]
     });
 
-    // Pre-fill Delete modal when clicking a row's trash icon
+    // Pre-fill Delete modal
     $('#deleteVehicleModal').on('show.bs.modal', function (e) {
-      var trigger = $(e.relatedTarget);
-      var id = trigger.data('vehicle-id');
-      if (id) { $('#delete_vehicle_id').val(id); }
+      var id = $(e.relatedTarget).data('vehicle-id');
+      if (id) $('#delete_vehicle_id').val(id);
+    });
+
+    // Driver list for assign modal (unassigned + current)
+    const DRIVERS = <?=
+      json_encode(array_map(function($d){
+        return [
+          'u_id' => (int)$d['u_id'],
+          'name' => $d['name'] ?: ('Driver #'.(int)$d['u_id']),
+          'current_vehicle_id' => isset($d['current_vehicle_id']) ? (int)$d['current_vehicle_id'] : null
+        ];
+      }, $drivers), JSON_UNESCAPED_UNICODE);
+    ?>;
+
+    $('#assignDriverModal').on('show.bs.modal', function(e){
+      var $btn = $(e.relatedTarget);
+      var vehicleId = parseInt($btn.data('vehicle-id'),10) || 0;
+      var currentDriverId = parseInt($btn.data('current-driver-id'),10) || 0;
+
+      $('#assign_vehicle_id').val(vehicleId);
+      var $sel = $('#assign_driver_id').empty();
+
+      // Always include None
+      $('<option/>').val('0').text('— None —').appendTo($sel);
+
+      // Filter: unassigned OR currently assigned to this vehicle
+      var opts = DRIVERS.filter(function(d){
+        return !d.current_vehicle_id || d.current_vehicle_id === vehicleId;
+      }).sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+
+      opts.forEach(function(d){
+        var $o = $('<option/>').val(d.u_id).text(d.name);
+        if (d.u_id === currentDriverId) $o.attr('selected', true);
+        $sel.append($o);
+      });
     });
   </script>
 </body>

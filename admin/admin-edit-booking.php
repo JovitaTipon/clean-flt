@@ -4,23 +4,341 @@ include('vendor/inc/config.php');
 include('vendor/inc/checklogin.php');
 check_login();
 if (!function_exists('is_admin') || !is_admin()) { header('Location: admin-trip-appointment.php'); exit; }
-$aid = (int)($_SESSION['a_id'] ?? 0);
 
-$u_id = isset($_GET['u_id']) ? (int)$_GET['u_id'] : 0;
-if (!$u_id) { header('Location: admin-trip-appointment.php'); exit; }
+$mysqli->set_charset('utf8mb4');
 
-if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save'])) {
-  $date  = trim($_POST['u_car_date']);
-  $time  = trim($_POST['u_car_time']);
-  $fname = trim($_POST['u_fname']);
-  $lname = trim($_POST['u_lname']);
-  $pax   = trim($_POST['u_car_pax']);
-  $pick  = trim($_POST['u_car_pickup']);
-  $dest  = trim($_POST['u_car_destination']);
-  $reg   = trim($_POST['u_car_regno']);
-  $type  = trim($_POST['u_car_type']);
-  $drv   = trim($_POST['u_car_driver']);
-  $status= trim($_POST['u_car_book_status']);
+/* ----------------- Helpers ----------------- */
+function table_exists(mysqli $db, string $t): bool {
+  $t = $db->real_escape_string($t);
+  $r = $db->query("SHOW TABLES LIKE '{$t}'");
+  return $r && $r->num_rows > 0;
+}
+function column_exists(mysqli $db, string $table, string $col): bool {
+  $t = $db->real_escape_string($table);
+  $c = $db->real_escape_string($col);
+  $r = $db->query("SHOW COLUMNS FROM `{$t}` LIKE '{$c}'");
+  return $r && $r->num_rows > 0;
+}
+
+/* ------------------------------------------------------------------
+   Decide which record we’re editing:
+   - New model:  bookings.id        => GET booking_id
+   - Legacy:     tms_user.u_id      => GET u_id
+-------------------------------------------------------------------*/
+$booking_id = isset($_GET['booking_id']) ? (int)$_GET['booking_id'] : 0;
+$legacy_id  = isset($_GET['u_id'])       ? (int)$_GET['u_id']       : 0;
+
+$is_new_model = $booking_id && table_exists($mysqli,'bookings');
+
+/* ==================================================================
+   NEW MODEL (bookings)
+==================================================================*/
+if ($is_new_model) {
+
+  // ---------- Save ----------
+  if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save_booking'])) {
+
+    $booking_type = ($_POST['booking_type'] ?? 'admin') === 'personal' ? 'personal' : 'admin';
+    $pax          = (int)($_POST['pax'] ?? 1);
+    $contact_name = trim($_POST['contact_name'] ?? '');
+    $contact_phone= trim($_POST['contact_phone'] ?? '');
+    $pickup_point = trim($_POST['pickup_point'] ?? '');
+    $dropoff_point= trim($_POST['dropoff_point'] ?? '');
+
+    $vehicle_id   = (int)($_POST['vehicle_id'] ?? 0);
+    if ($vehicle_id <= 0) $vehicle_id = null;
+
+    $driver_id    = (int)($_POST['driver_id'] ?? 0);
+    if ($driver_id  <= 0) $driver_id  = null;
+
+    $sd = trim($_POST['sched_date'] ?? '');
+    $st = trim($_POST['sched_time'] ?? '');
+    $scheduled = ($sd && $st) ? ($sd . ' ' . $st . ':00') : null;
+
+    $status = $_POST['status'] ?? 'pending';
+    $allowed = ['pending','awaiting_driver','assigned','accepted','in_progress','cancelled','completed'];
+    if (!in_array($status,$allowed,true)) $status = 'pending';
+
+    $notes  = trim($_POST['notes'] ?? '');
+
+    $sql = "UPDATE bookings
+            SET booking_type=?, pax=?, contact_name=?, contact_phone=?,
+                pickup_point=?, dropoff_point=?, vehicle_id=?, driver_id=?,
+                scheduled_start_at=?, status=?, notes=?, updated_at=NOW()
+            WHERE id=?";
+    if ($s = $mysqli->prepare($sql)) {
+      // types: s i s s s s i i s s s i  (12)
+      $s->bind_param(
+        'sissss iis ssi',
+        $booking_type, $pax, $contact_name, $contact_phone,
+        $pickup_point, $dropoff_point, $vehicle_id, $driver_id,
+        $scheduled, $status, $notes, $booking_id
+      );
+      // The spaces above are for readability only; PHP ignores them.
+      $s->execute(); $s->close();
+    }
+
+    header('Location: admin-trip-appointment.php?updated=1'); exit;
+  }
+
+  // ---------- Load ----------
+  $row = null;
+  if ($s = $mysqli->prepare("
+        SELECT b.*,
+               d.name AS driver_name,
+               v.plate_no AS vehicle_reg_no
+          FROM bookings b
+          LEFT JOIN accounts d ON d.id=b.driver_id
+          LEFT JOIN vehicles v ON v.id=b.vehicle_id
+         WHERE b.id=? LIMIT 1")) {
+    $s->bind_param('i',$booking_id);
+    $s->execute();
+    $res = $s->get_result();
+    $row = $res->fetch_assoc();
+    $s->close();
+  }
+  if (!$row) { header('Location: admin-trip-appointment.php'); exit; }
+
+  // Aux lists
+  $drivers  = [];
+  if (table_exists($mysqli,'accounts')) {
+    if ($q=$mysqli->query("SELECT id,name FROM accounts WHERE role='driver' AND is_active=1 ORDER BY name")) {
+      while($r=$q->fetch_assoc()) $drivers[]=$r;
+    }
+  }
+  $vehicles = [];
+  if (table_exists($mysqli,'vehicles')) {
+    if ($q=$mysqli->query("SELECT id, plate_no, name FROM vehicles ORDER BY name, plate_no")) {
+      while($r=$q->fetch_assoc()) $vehicles[]=$r;
+    }
+  }
+
+  // Build pairing maps (Vehicle -> Driver) and (Driver -> Vehicle)
+  $vehToDrv = [];
+  $drvToVeh = [];
+
+  if (table_exists($mysqli,'vehicles')) {
+    // Prefer direct column if present
+    $driverCol = null;
+    if (column_exists($mysqli,'vehicles','driver_id')) $driverCol = 'driver_id';
+    elseif (column_exists($mysqli,'vehicles','default_driver_id')) $driverCol = 'default_driver_id';
+
+    if ($driverCol) {
+      $rs = $mysqli->query("SELECT id AS v_id, {$driverCol} AS d_id FROM vehicles WHERE {$driverCol} IS NOT NULL");
+      if ($rs) while($m=$rs->fetch_assoc()){
+        $vid=(int)$m['v_id']; $did=(int)$m['d_id'];
+        if ($vid && $did){ $vehToDrv[$vid]=$did; $drvToVeh[$did]=$vid; }
+      }
+    } else {
+      // Fallback: map via legacy tms_vehicle + tms_user using plate_no and driver name
+      $vehByPlate = [];
+      foreach ($vehicles as $v) {
+        $plate = trim((string)$v['plate_no']);
+        if ($plate!=='') $vehByPlate[strtolower($plate)] = (int)$v['id'];
+      }
+      $accByName = [];
+      if (table_exists($mysqli,'accounts')) {
+        $qr=$mysqli->query("SELECT id,name FROM accounts WHERE role='driver'");
+        if ($qr) while($a=$qr->fetch_assoc()){
+          $nm=strtolower(trim((string)$a['name']));
+          if ($nm!=='') $accByName[$nm]=(int)$a['id'];
+        }
+      }
+      if (table_exists($mysqli,'tms_vehicle') && table_exists($mysqli,'tms_user')) {
+        $q=$mysqli->query("SELECT v.v_reg_no, u.u_fname, u.u_lname 
+                           FROM tms_vehicle v 
+                           LEFT JOIN tms_user u ON u.u_id=v.driver_user_id
+                           WHERE v.driver_user_id IS NOT NULL");
+        if ($q) while($r=$q->fetch_assoc()){
+          $plate = strtolower(trim((string)$r['v_reg_no']));
+          $name  = strtolower(trim(((string)$r['u_fname']).' '.((string)$r['u_lname'])));
+          if (isset($vehByPlate[$plate]) && isset($accByName[$name])){
+            $vid = $vehByPlate[$plate];
+            $did = $accByName[$name];
+            $vehToDrv[$vid] = $did;
+            $drvToVeh[$did] = $vid;
+          }
+        }
+      }
+    }
+  }
+
+  // split scheduled for inputs
+  $sd = $row['scheduled_start_at'] ? substr($row['scheduled_start_at'],0,10) : '';
+  $st = $row['scheduled_start_at'] ? substr($row['scheduled_start_at'],11,5) : '';
+
+  ?>
+  <!DOCTYPE html>
+  <html lang="en">
+  <?php include('vendor/inc/head.php'); ?>
+  <body id="page-top">
+  <?php include('vendor/inc/nav.php'); ?>
+  <div id="wrapper">
+    <?php include('vendor/inc/sidebar.php'); ?>
+    <div id="content-wrapper">
+      <div class="container-fluid">
+        <h1 class="kaya-page-title">Edit Booking</h1>
+
+        <div class="kaya-card p-3">
+          <form method="post">
+            <input type="hidden" name="save_booking" value="1">
+
+            <div class="form-row">
+              <div class="form-group col-md-3">
+                <label>Booking Type</label>
+                <select name="booking_type" class="form-control">
+                  <option value="admin"    <?= $row['booking_type']==='admin'?'selected':''; ?>>Admin</option>
+                  <option value="personal" <?= $row['booking_type']==='personal'?'selected':''; ?>>Personal</option>
+                </select>
+              </div>
+              <div class="form-group col-md-3">
+                <label>Pax</label>
+                <input type="number" class="form-control" name="pax" min="1" value="<?= (int)$row['pax'] ?>">
+              </div>
+              <div class="form-group col-md-3">
+                <label>Scheduled Date</label>
+                <input type="date" class="form-control" name="sched_date" value="<?= htmlspecialchars($sd) ?>">
+              </div>
+              <div class="form-group col-md-3">
+                <label>Scheduled Time</label>
+                <input type="time" class="form-control" name="sched_time" value="<?= htmlspecialchars($st) ?>">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group col-md-6">
+                <label>Contact Name</label>
+                <input type="text" class="form-control" name="contact_name" value="<?= htmlspecialchars($row['contact_name'] ?? '') ?>">
+              </div>
+              <div class="form-group col-md-6">
+                <label>Contact Phone</label>
+                <input type="text" class="form-control" name="contact_phone" value="<?= htmlspecialchars($row['contact_phone'] ?? '') ?>">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group col-md-6">
+                <label>Pickup</label>
+                <input type="text" class="form-control" name="pickup_point" value="<?= htmlspecialchars($row['pickup_point'] ?? '') ?>">
+              </div>
+              <div class="form-group col-md-6">
+                <label>Dropoff</label>
+                <input type="text" class="form-control" name="dropoff_point" value="<?= htmlspecialchars($row['dropoff_point'] ?? '') ?>">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group col-md-6">
+                <label>Vehicle</label>
+                <select name="vehicle_id" id="vehicleSelect" class="form-control">
+                  <option value="">— None —</option>
+                  <?php foreach($vehicles as $v): ?>
+                    <option value="<?= (int)$v['id'] ?>" <?= ((int)$row['vehicle_id']===(int)$v['id'])?'selected':''; ?>>
+                      <?= htmlspecialchars(($v['name'] ?: 'Vehicle').' · '.$v['plate_no']) ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <div class="form-group col-md-6">
+                <label>Driver</label>
+                <select name="driver_id" id="driverSelect" class="form-control">
+                  <option value="">— None —</option>
+                  <?php foreach($drivers as $d): ?>
+                    <option value="<?= (int)$d['id'] ?>" <?= ((int)$row['driver_id']===(int)$d['id'])?'selected':''; ?>>
+                      <?= htmlspecialchars($d['name']) ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group col-md-6">
+                <label>Status</label>
+                <select name="status" class="form-control">
+                  <?php
+                    $opts=['pending','awaiting_driver','assigned','accepted','in_progress','cancelled','completed'];
+                    foreach($opts as $opt){
+                      $sel = ($row['status']===$opt)?'selected':'';
+                      echo "<option $sel>".htmlspecialchars($opt)."</option>";
+                    }
+                  ?>
+                </select>
+              </div>
+              <div class="form-group col-md-6">
+                <label>Notes</label>
+                <input type="text" class="form-control" name="notes" value="<?= htmlspecialchars($row['notes'] ?? '') ?>">
+              </div>
+            </div>
+
+            <div class="text-right">
+              <button class="btn btn-kaya-primary" type="submit">Save</button>
+              <a class="btn btn-outline-secondary" href="admin-trip-appointment.php">Back</a>
+            </div>
+          </form>
+        </div>
+      </div>
+      <?php include('vendor/inc/footer.php'); ?>
+    </div>
+  </div>
+
+  <script src="vendor/jquery/jquery.min.js"></script>
+  <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    // Pairing maps from PHP (no AJAX needed)
+    const VEH_TO_DRV = <?= json_encode($vehToDrv, JSON_UNESCAPED_UNICODE) ?>;
+    const DRV_TO_VEH = <?= json_encode($drvToVeh, JSON_UNESCAPED_UNICODE) ?>;
+
+    (function(){
+      var $veh = $('#vehicleSelect');
+      var $drv = $('#driverSelect');
+
+      $veh.on('change', function(){
+        var vid = $(this).val();
+        if (!vid) return;
+        if (VEH_TO_DRV.hasOwnProperty(vid)) {
+          var want = String(VEH_TO_DRV[vid]);
+          if (String($drv.val()) !== want) $drv.val(want).trigger('change');
+        }
+      });
+
+      $drv.on('change', function(){
+        var uid = $(this).val();
+        if (!uid) return;
+        if (DRV_TO_VEH.hasOwnProperty(uid)) {
+          var want = String(DRV_TO_VEH[uid]);
+          if (String($veh.val()) !== want) $veh.val(want).trigger('change');
+        }
+      });
+    })();
+  </script>
+  </body>
+  </html>
+  <?php
+  exit;
+}
+
+/* ==================================================================
+   LEGACY MODEL (tms_user)  — kept so your older rows still edit
+==================================================================*/
+
+$u_id = $legacy_id ?: (int)($_GET['booking_id'] ?? 0); // allow booking_id to map to legacy id
+
+if (!$u_id || !table_exists($mysqli,'tms_user')) { header('Location: admin-trip-appointment.php'); exit; }
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save_legacy'])) {
+  $date  = trim($_POST['u_car_date'] ?? '');
+  $time  = trim($_POST['u_car_time'] ?? '');
+  $fname = trim($_POST['u_fname'] ?? '');
+  $lname = trim($_POST['u_lname'] ?? '');
+  $pax   = trim($_POST['u_car_pax'] ?? '');
+  $pick  = trim($_POST['u_car_pickup'] ?? '');
+  $dest  = trim($_POST['u_car_destination'] ?? '');
+  $reg   = trim($_POST['u_car_regno'] ?? '');
+  $type  = trim($_POST['u_car_type'] ?? '');
+  $drv   = trim($_POST['u_car_driver'] ?? '');
+  $status= trim($_POST['u_car_book_status'] ?? '');
 
   $sql = "UPDATE tms_user
           SET u_car_date=?, u_car_time=?, u_fname=?, u_lname=?, u_car_pax=?,
@@ -29,23 +347,14 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save'])) {
           WHERE u_id=?";
   if ($s=$mysqli->prepare($sql)) {
     $s->bind_param('ssssissssssi',$date,$time,$fname,$lname,$pax,$pick,$dest,$reg,$type,$drv,$status,$u_id);
-    $ok = $s->execute(); $s->close();
-    // audit
-    if ($ok) {
-      // lightweight re-use of helper from edit page
-      $mk = $mysqli->prepare("CREATE TABLE IF NOT EXISTS tms_audit_log (id INT AUTO_INCREMENT PRIMARY KEY, actor_type ENUM('admin','driver') NOT NULL, actor_id INT NOT NULL, action VARCHAR(50) NOT NULL, booking_u_id INT NOT NULL, details JSON NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-      @$mk->execute(); @$mk->close();
-      $d = json_encode(['status'=>$status], JSON_UNESCAPED_UNICODE);
-      $a = $mysqli->prepare("INSERT INTO tms_audit_log(actor_type,actor_id,action,booking_u_id,details) VALUES ('admin',?,?,?,?)");
-      if ($a){ $act='edit'; $a->bind_param('sis',$aid,$u_id,$d); $a->execute(); $a->close(); }
-    }
-    header('Location: admin-trip-appointment.php?updated=1'); exit;
+    $s->execute(); $s->close();
   }
+  header('Location: admin-trip-appointment.php?updated=1'); exit;
 }
 
-// load current
+// load legacy row
 $row = null;
-if ($s=$mysqli->prepare("SELECT * FROM tms_user WHERE u_id=?")) {
+if ($s=$mysqli->prepare("SELECT * FROM tms_user WHERE u_id=? LIMIT 1")) {
   $s->bind_param('i',$u_id);
   $s->execute();
   $res = $s->get_result();
@@ -66,6 +375,7 @@ if (!$row) { header('Location: admin-trip-appointment.php'); exit; }
       <h1 class="kaya-page-title">Edit Booking</h1>
       <div class="kaya-card p-3">
         <form method="post">
+          <input type="hidden" name="save_legacy" value="1">
           <div class="form-row">
             <div class="form-group col-md-3">
               <label>Date</label>
@@ -133,17 +443,5 @@ if (!$row) { header('Location: admin-trip-appointment.php'); exit; }
 
 <script src="vendor/jquery/jquery.min.js"></script>
 <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
-<script>
-  (function () {
-    var btn = document.getElementById('sidebarToggle');
-    if (!btn) return;
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      document.body.classList.toggle('sidebar-toggled');
-      var rail = document.getElementById('kayaSidebar');
-      if (rail) rail.classList.toggle('kaya-rail--collapsed');
-    });
-  })();
-</script>
 </body>
 </html>

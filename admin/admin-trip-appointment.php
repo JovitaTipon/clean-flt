@@ -114,6 +114,10 @@ define('ACTION_ENDPOINT', 'booking_actions.php');
 ?>
 <!DOCTYPE html>
 <html lang="en">
+  <style>
+     /* Consistent page title */
+    .kaya-page-title{font-weight:800;font-size:2rem;line-height:1.1;color:#000047;margin:0 0 1rem}
+  </style>
 <?php include('vendor/inc/head.php'); ?>
 <body id="page-top">
 <?php include('vendor/inc/nav.php'); ?>

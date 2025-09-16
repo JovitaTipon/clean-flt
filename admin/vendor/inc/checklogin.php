@@ -62,4 +62,48 @@ function require_user()  { return check_login('user');  }
 
 /** Optional helpers if you need quick checks without redirecting */
 function is_admin() { return isset($_SESSION['user_type'], $_SESSION['a_id']) && $_SESSION['user_type'] === 'admin' && $_SESSION['a_id']; }
+
+// --- Map legacy admin session to accounts.id once per session ---
+if (isset($_SESSION['a_id']) && empty($_SESSION['accounts_id'])) {
+  $aid = (int)$_SESSION['a_id'];
+
+  // Try to find a matching accounts row by email from tms_admin
+  if ($st = $mysqli->prepare("
+        SELECT a_email, COALESCE(NULLIF(a_name,''),'Admin') AS nm, a_pwd
+        FROM tms_admin WHERE a_id=? LIMIT 1
+      ")) {
+    $st->bind_param('i', $aid);
+    $st->execute();
+    $st->bind_result($email, $name, $pwd);
+    if ($st->fetch() && $email) {
+      $st->close();
+
+      // Look up accounts.id
+      if ($f = $mysqli->prepare("SELECT id FROM accounts WHERE email=? LIMIT 1")) {
+        $f->bind_param('s', $email);
+        $f->execute();
+        $f->bind_result($acctId);
+        if ($f->fetch()) {
+          $_SESSION['accounts_id'] = (int)$acctId;
+          $f->close();
+        } else {
+          $f->close();
+          // Create one if missing (reuses the existing hash from tms_admin)
+          if ($i = $mysqli->prepare("
+                INSERT INTO accounts(role,name,email,password_hash,is_active,created_at,updated_at)
+                VALUES('admin',?,?,?,1,NOW(),NOW())
+              ")) {
+            $i->bind_param('sss', $name, $email, $pwd);
+            $i->execute();
+            $_SESSION['accounts_id'] = (int)$i->insert_id;
+            $i->close();
+          }
+        }
+      }
+    } else {
+      $st->close();
+    }
+  }
+}
+
 function is_user()  { return isset($_SESSION['user_type'], $_SESSION['u_id']) && $_SESSION['user_type'] === 'user'  && $_SESSION['u_id']; }

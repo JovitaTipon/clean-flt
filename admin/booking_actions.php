@@ -9,7 +9,7 @@ check_login();
 $mysqli->set_charset('utf8mb4');
 @$mysqli->query("SET collation_connection='utf8mb4_unicode_ci'");
 
-// ---------- helpers ----------
+// helpers
 function table_exists(mysqli $db, string $t): bool {
   $t = $db->real_escape_string($t);
   $r = $db->query("SHOW TABLES LIKE '{$t}'");
@@ -42,18 +42,18 @@ function back_to(string $fallback = 'admin-trip-appointment.php'){
   exit;
 }
 
-// ---------- route ----------
+// route 
 $action = $_POST['action'] ?? '';
 $bid    = isset($_POST['id']) ? (int)$_POST['id'] : 0;
 
 if (!$action || !$bid) back_to();
 
-// Which schema do we have?
+// Which schema do we have
 $hasNew = table_exists($mysqli,'bookings');
 $actorRole = is_admin_user() ? 'admin' : 'driver';
 $actorId   = actor_id();
 
-// =============== ADMIN ACTIONS ===============
+// ADMIN ACTIONS
 if ($action === 'admin_cancel' && is_admin_user()) {
   if ($hasNew) {
     if ($s = $mysqli->prepare("UPDATE bookings SET status='cancelled', updated_at=NOW() WHERE id=?")) {
@@ -70,7 +70,7 @@ if ($action === 'admin_cancel' && is_admin_user()) {
 
 if ($action === 'admin_approve' && is_admin_user()) {
   if ($hasNew) {
-    // Put it in an approved / driver-ready state
+    // Put it in an approved/driver-ready state
     if ($s = $mysqli->prepare("UPDATE bookings SET status='accepted', updated_at=NOW() WHERE id=?")) {
       $s->bind_param('i',$bid); $s->execute(); $s->close();
       log_event($mysqli,$bid,$actorId,'admin','assign');
@@ -97,7 +97,7 @@ if ($action === 'admin_complete' && is_admin_user()) {
   back_to('admin-view-booking.php');
 }
 
-/* --------- THIS IS THE ONE YOU NEED --------- */
+//restore action
 if ($action === 'admin_restore' && is_admin_user()) {
   if ($hasNew) {
     // Move back to queue
@@ -128,7 +128,7 @@ if ($action === 'admin_delete' && is_admin_user()) {
   back_to('admin-manage-booking.php');
 }
 
-// =============== DRIVER ACTIONS ===============
+//DRIVER ACTIONS
 if ($action === 'driver_accept') {
   if ($hasNew) {
     if ($s = $mysqli->prepare("UPDATE bookings SET status='accepted', updated_at=NOW() WHERE id=?")) {
@@ -158,7 +158,7 @@ if ($action === 'driver_decline') {
   back_to('admin-manage-booking.php');
 }
 
-// =============== TRIP START / END ===============
+// TRIP START / END 
 if ($action === 'trip_start') {
   if ($hasNew) {
     // Start ride -> in_progress, record pickup_button_at
